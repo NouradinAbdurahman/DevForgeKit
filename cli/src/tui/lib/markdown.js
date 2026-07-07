@@ -25,10 +25,35 @@
 // still separate lines the way the model intended); every other HTML tag
 // is removed outright rather than printed literally.
 function stripHtml(text) {
-    return text.replace(
-        /<script\b[\s\S]*?<\/script\s*>|<br\s*\/?\s*>|<\/?\s*(?:script|style|iframe|object|embed)\b[^>]*>|<[^>]*>/gi,
-        (tag) => /^<br/i.test(tag) ? "\n" : ""
-    );
+    let result = "";
+    let i = 0;
+    while (i < text.length) {
+        if (text[i] !== "<") {
+            result += text[i];
+            i++;
+            continue;
+        }
+        const rest = text.slice(i);
+        const brMatch = /^<br\s*\/?\s*>/i.exec(rest);
+        if (brMatch) {
+            result += "\n";
+            i += brMatch[0].length;
+            continue;
+        }
+        const scriptMatch = /^<script\b[\s\S]*?<\/script\s*>/i.exec(rest);
+        if (scriptMatch) {
+            i += scriptMatch[0].length;
+            continue;
+        }
+        const tagMatch = /^<[^>]*>/.exec(rest);
+        if (tagMatch) {
+            i += tagMatch[0].length;
+            continue;
+        }
+        result += "<";
+        i++;
+    }
+    return result;
 }
 
 const INLINE_PATTERN = /(\*\*([^*]+)\*\*)|(__([^_]+)__)|(\*([^*]+)\*)|(_([^_]+)_)|(`([^`]+)`)|(\[([^\]]+)\]\(([^)]+)\))/g;
