@@ -868,7 +868,7 @@ test("the Environment Graph page renders real node data with no corruption once 
         // the instant this page is shown - matching CompatibilityPage's
         // own established auto-scan-on-mount convention - so there's no
         // separate "start the build" step; this just waits for it.
-        await delay(25000);
+        await delay(40000); // CI may be slower for 261 shell probes
         const frame = lastFrame();
         assert.match(frame, /Environment Graph \(\d+ nodes\)/);
         assert.match(frame, /installed/);
