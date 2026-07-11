@@ -184,13 +184,13 @@ export function registerBenchmarkCommand(program) {
                 limit: opts.limit
             });
 
-            if (history.length === 0) {
-                logger.info("No benchmark results found. Run 'devforgekit benchmark' to create one.");
+            if (opts.json) {
+                console.log(JSON.stringify(history, null, 2));
                 return;
             }
 
-            if (opts.json) {
-                console.log(JSON.stringify(history, null, 2));
+            if (history.length === 0) {
+                logger.info("No benchmark results found. Run 'devforgekit benchmark' to create one.");
                 return;
             }
 

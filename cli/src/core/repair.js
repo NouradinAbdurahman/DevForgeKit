@@ -31,6 +31,7 @@ import { userStateDir, userConfigDir, homeDir, repoRoot, scriptPath } from "./pa
 import { loadConfig, getConfigValue } from "./config.js";
 import { loadPackages, getPackage } from "./registry.js";
 import { validate, install, uninstall, repair as repairComponent, resolveInstallStep } from "./installer.js";
+import { mapWithConcurrency } from "./concurrency.js";
 import { getVersion } from "../version.js";
 import { logger } from "./logger.js";
 import { DevForgeError } from "./errors.js";
@@ -142,16 +143,15 @@ export const ACTION_TYPES = {
 // 4+ times in this file and once in commands/doctor.js. Single source now.
 
 async function getInstalledPackageNames() {
-  const names = [];
-  for (const pkg of loadPackages()) {
-    if (!pkg.validate) continue;
+  const packages = loadPackages().filter((pkg) => pkg.validate);
+  const validated = await mapWithConcurrency(packages, 8, async (pkg) => {
     try {
-      if ((await validate(pkg)) === 0) names.push(pkg.name);
+      return (await validate(pkg)) === 0 ? pkg.name : null;
     } catch {
-      // Not installed
+      return null;
     }
-  }
-  return names;
+  });
+  return validated.filter(Boolean);
 }
 
 // ─── Constants ────────────────────────────────────────────────────────

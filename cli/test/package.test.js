@@ -19,7 +19,9 @@ import {
     clearCache,
     searchPackages,
     applyFilter,
-    packageInfo
+    packageInfo,
+    analyzePackages,
+    getInstalledPackageNames
 } from "../src/core/packageIntel.js";
 import { loadPackages } from "../src/core/registry.js";
 
@@ -636,4 +638,49 @@ test("packageInfo profile is null when not in analysis", () => {
     const info = packageInfo("flutter", { analysis });
     assert.ok(info.registry);
     assert.equal(info.profile, null);
+});
+
+// Regression guard: analyzePackages() had two independent sequential-loop
+// bugs discovered live - its own "detect installed" first pass was
+// already bounded-concurrency, but the more expensive "build a profile
+// per installed package" second pass (packagePrefix/which/du -sk/usage
+// detection each) was still a plain for-loop, and getInstalledPackageNames()
+// (used directly by `package tree`/`package graph`) had never been
+// converted at all. Both made `package analyze/duplicates/orphan/outdated/
+// search/unused --json` hang indefinitely on a real, populated machine -
+// confirmed directly (25s+ with zero output before the fix). These bounds
+// are generous (this really does shell out many times against real
+// installed software) but would catch a regression back to unbounded
+// sequential processing, which took well over a minute even for a modest
+// subset of installed packages.
+test("getInstalledPackageNames() resolves in bounded time against the real registry", async () => {
+    const start = Date.now();
+    const names = await getInstalledPackageNames();
+    const elapsedMs = Date.now() - start;
+    assert.ok(Array.isArray(names));
+    // 120s, not 60s: measured locally at well under 60s, but a real CI
+    // runner (shared, resource-constrained) measured ~2.5x slower than
+    // this dev machine on the sibling analyzePackages() test below -
+    // this bound needs the same real-world headroom, not just a
+    // comfortable-looking number picked from local timing alone.
+    assert.ok(elapsedMs < 120_000, `expected bounded-concurrency validation to finish well under 120s, took ${elapsedMs}ms`);
+});
+
+test("analyzePackages() completes in bounded time and returns a well-formed analysis", async () => {
+    const start = Date.now();
+    const analysis = await analyzePackages({ useCache: false, silent: true });
+    const elapsedMs = Date.now() - start;
+    assert.ok(analysis.summary);
+    assert.ok(Array.isArray(analysis.profiles));
+    assert.ok(Array.isArray(analysis.orphans));
+    assert.ok(Array.isArray(analysis.duplicates));
+    assert.ok(Array.isArray(analysis.outdated));
+    // 300s, not 150s: this exact test measured 34-61s locally but
+    // 154.7s on a real GitHub Actions runner (confirmed via a live CI
+    // failure, not guessed) - shared CI runners are meaningfully slower
+    // than a dev machine for a workload this shell-out-heavy. 300s still
+    // gives ~2x margin over the observed CI time while remaining far
+    // short of what a true regression to unbounded sequential
+    // processing would take.
+    assert.ok(elapsedMs < 300_000, `expected bounded-concurrency profile building to finish well under 300s, took ${elapsedMs}ms`);
 });

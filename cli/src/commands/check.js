@@ -7,19 +7,18 @@ import { validate as validateComponent } from "../core/installer.js";
 import { scoreResults } from "../core/health.js";
 import { logger } from "../core/logger.js";
 import { withErrorHandling } from "../core/errors.js";
+import { mapWithConcurrency } from "../core/concurrency.js";
 
-async function runComponentChecks() {
-    const results = [];
-    for (const pkg of loadPackages()) {
-        if (!pkg.validate) continue;
+export async function runComponentChecks() {
+    const packages = loadPackages().filter((pkg) => pkg.validate);
+    return mapWithConcurrency(packages, 8, async (pkg) => {
         try {
             const code = await validateComponent(getPackage(pkg.name));
-            results.push({ status: code === 0 ? "PASS" : "WARNING", description: `Component check: ${pkg.name}` });
+            return { status: code === 0 ? "PASS" : "WARNING", description: `Component check: ${pkg.name}` };
         } catch {
-            results.push({ status: "WARNING", description: `Component check: ${pkg.name} (could not run)` });
+            return { status: "WARNING", description: `Component check: ${pkg.name} (could not run)` };
         }
-    }
-    return results;
+    });
 }
 
 export function registerCheckCommand(program) {

@@ -19,6 +19,33 @@ import { TerminalSizeProvider } from "../src/tui/hooks/useTerminalSize.js";
 
 const theme = getTheme("dark");
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+// Ink re-renders asynchronously after a simulated stdin event; a fixed
+// delay is a real, observed flake source under CI load (a run failed
+// here: the assertion ran against a stale frame because the re-render
+// hadn't committed yet within the fixed window). Poll until the
+// condition is true or a generous timeout elapses instead - this
+// resolves just as fast as a fixed delay under normal load and only
+// waits longer when the runner is genuinely under contention.
+// Deliberately checks *after* the first delay, never before: Ink attaches
+// its raw-mode stdin 'readable' listener from a useEffect that only runs
+// on a later event-loop turn, not synchronously during render(). A
+// check-then-delay loop can resolve on the very first (already-true)
+// check with zero ticks elapsed - which starved that effect from ever
+// running before the next stdin.write(), causing every keypress after it
+// to be silently dropped forever (confirmed live: not a timing flake,
+// a deterministic hang, self-inflicted by an earlier version of this
+// exact helper).
+async function waitForCondition(check, { timeout = 2000, interval = 10 } = {}) {
+    const start = Date.now();
+    do {
+        await delay(interval);
+        if (check()) return;
+    } while (Date.now() - start < timeout);
+    if (!check()) {
+        throw new Error(`waitForCondition: condition not met within ${timeout}ms`);
+    }
+}
+const waitForFrame = (lastFrame, pattern, opts) => waitForCondition(() => pattern.test(lastFrame()), opts);
 // Built via String.fromCharCode rather than a literal escape in source -
 // tooling that touches this file can mangle a raw \x1B byte in a string
 // literal, so we construct it at runtime instead.
@@ -112,17 +139,17 @@ test("ScrollList shows a windowed view with 'more' indicators and scrolls with j
         items, isActive: true, height: 5, theme,
         renderItem: (item, index) => h(Text, { key: index }, item)
     }));
-    await delay(20);
+    await waitForFrame(lastFrame, /↓ 25 more/);
     assert.match(lastFrame(), /item-0/);
     assert.match(lastFrame(), /↓ 25 more/);
 
     stdin.write("G"); // jump to bottom
-    await delay(20);
+    await waitForFrame(lastFrame, /item-29/);
     assert.match(lastFrame(), /item-29/);
     assert.match(lastFrame(), /↑ 25 more/);
 
     stdin.write("g"); // jump back to top
-    await delay(20);
+    await waitForFrame(lastFrame, /item-0/);
     assert.match(lastFrame(), /item-0/);
     unmount();
 });
@@ -134,15 +161,15 @@ test("SelectList supports PageDown/PageUp and g/G in addition to arrows", async 
         items, isActive: true, height: 5, theme,
         onHighlight: (item) => { highlighted = item; }
     }));
-    await delay(20);
+    await delay(20); // initial mount settle - onHighlight only fires in response to a keypress, nothing to poll for yet
     stdin.write(KEYS.pageDown);
-    await delay(20);
+    await waitForCondition(() => highlighted === "row-5");
     assert.equal(highlighted, "row-5");
     stdin.write("G");
-    await delay(20);
+    await waitForCondition(() => highlighted === "row-19");
     assert.equal(highlighted, "row-19");
     stdin.write("g");
-    await delay(20);
+    await waitForCondition(() => highlighted === "row-0");
     assert.equal(highlighted, "row-0");
     unmount();
 });
@@ -158,16 +185,16 @@ test("useFilterField opens on '/' and reports typing changes, closes on Esc", as
     const typingEvents = [];
     const { lastFrame, stdin, unmount } = render(
         h(FilterHarness, { onTypingChange: (v) => typingEvents.push(v) }));
-    await delay(20);
+    await delay(20); // initial mount settle - nothing to poll for yet
     assert.equal(lastFrame(), ""); // closed: FilterBar renders nothing
 
     stdin.write("/");
-    await delay(20);
+    await waitForCondition(() => typingEvents.length === 1);
     assert.match(lastFrame(), /Type to filter/);
     assert.deepEqual(typingEvents, [true]);
 
     stdin.write(KEYS.esc);
-    await delay(20);
+    await waitForCondition(() => typingEvents.length === 2);
     assert.equal(lastFrame(), "");
     assert.deepEqual(typingEvents, [true, false]);
     unmount();

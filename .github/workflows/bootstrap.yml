@@ -1,7 +1,12 @@
 name: DevForgeKit Bootstrap
 
+# An unrestricted push+pull_request trigger runs this identical macOS
+# dry-run job twice for the same commit (a feature-branch push, then
+# its PR firing separately) - restricting push to main mirrors e2e.yml/
+# shellcheck.yml/registry-smoke.yml's fix for the same duplication.
 on:
   push:
+    branches: [main]
   pull_request:
 
 permissions:

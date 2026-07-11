@@ -6,9 +6,10 @@ name: DevForgeKit Core CLI
 # hitting the TUI suite's timing-sensitive tests under the resulting
 # CPU contention between two concurrent full runs on shared runners
 # (see docs/CommandSafety.md-era PR #16 for two real examples). push
-# now runs a fast, cheap subset (lint + the sub-minute registry
-# consistency checks) for quick feedback on every commit; the full
-# suite (npm test, several minutes) only runs once, on pull_request.
+# now runs a fast, cheap subset (lint + a small high-signal unit smoke
+# test + the sub-minute registry consistency checks) for quick feedback
+# on every commit; the full suite (npm test, several minutes) only runs
+# once, on pull_request.
 
 on:
   push:
@@ -46,6 +47,10 @@ jobs:
 
       - name: Lint
         run: npm run lint
+        working-directory: cli
+
+      - name: Unit smoke (config/registry/command-tree sanity - not the full suite, just fast, high-signal coverage that every command module still imports and registers cleanly)
+        run: node --test test/config.test.js test/registry.test.js test/commandTree.test.js
         working-directory: cli
 
       - name: Registry format check (every registry/*.yaml must already be canonically formatted - run 'devforgekit registry format' locally if this fails)

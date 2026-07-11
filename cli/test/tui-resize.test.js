@@ -20,6 +20,23 @@ import { setConfigValue } from "../src/core/config.js";
 
 const h = React.createElement;
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+// A fixed delay assumes the debounce timer gets to fire within that
+// window - true in isolation, but a real, observed flake under a full
+// concurrent test-suite run (CPU contention delays the debounce's own
+// setTimeout past a short fixed budget). Poll instead: always yields at
+// least once before the first check (never resolves in zero ticks - see
+// tui-components.test.js's waitForCondition for why that ordering
+// matters), then keeps extending the wait only as long as actually needed.
+async function waitForCondition(check, { timeout = 2000, interval = 20 } = {}) {
+    const start = Date.now();
+    do {
+        await delay(interval);
+        if (check()) return;
+    } while (Date.now() - start < timeout);
+    if (!check()) {
+        throw new Error(`waitForCondition: condition not met within ${timeout}ms`);
+    }
+}
 
 class FakeStdout extends EventEmitter {
     constructor(columns, rows) {
@@ -334,7 +351,7 @@ test("a burst of resize events settles into exactly one state update (debounced)
         for (let i = 0; i < 20; i++) {
             stdout.resizeTo(100 + i, 30);
         }
-        await delay(200);
+        await waitForCondition(() => /119x30/.test(stdout.lastFrame()));
 
         const frame = stdout.lastFrame();
         assert.match(frame, /119x30/);

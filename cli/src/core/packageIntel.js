@@ -26,7 +26,7 @@ import { loadPackages, loadProfiles, loadRecipes, loadCollections, getPackage } 
 import { buildDependencyGraph, detectCycles, detectDuplicateTools } from "./compatibility/graph.js";
 import { scanCompatibility, scoreCompatibility } from "./compatibility/engine.js";
 import { validate, install, uninstall, resolveInstallStep } from "./installer.js";
-import { runShellCommand, captureShellCommand, commandExists, shellQuote } from "./shell.js";
+import { runShellCommand, captureShellCommand, captureShellCommandWithDetails, commandExists, shellQuote } from "./shell.js";
 import { mapWithConcurrency } from "./concurrency.js";
 import { listWorkspaces } from "./workspace/store.js";
 import { discoverPlugins } from "./plugins.js";
@@ -99,20 +99,25 @@ export async function buildPackageProfile(pkg, { installedPackages } = {}) {
         }
         if (!installLocation && pkg.validate) {
             const cmd = pkg.validate.split(/\s+/)[0];
-            const { stdout } = await captureShellCommand(`which ${shellQuote(cmd)} 2>/dev/null`);
+            const { stdout } = await captureShellCommandWithDetails(`which ${shellQuote(cmd)} 2>/dev/null`, { timeoutMs: 3000 });
             installLocation = stdout.trim() || null;
         }
     } catch {
         // Location detection failed
     }
 
-    // Get package size
+    // Get package size. `du -sk` on a real, large install directory (a
+    // multi-GB toolchain, an app bundle, a slow/network-mounted path) can
+    // take far longer than a quick per-package check should ever take -
+    // previously unbounded, this alone could make a 261-package scan hang
+    // indefinitely. Bounded and degrades to "unknown" (0) rather than
+    // fabricating a number, same as every other honest-degrade spot here.
     let sizeBytes = 0;
     if (installLocation && existsSync(installLocation)) {
         try {
             const stat = statSync(installLocation);
             if (stat.isDirectory()) {
-                const { stdout } = await captureShellCommand(`du -sk ${shellQuote(installLocation)} 2>/dev/null`);
+                const { stdout } = await captureShellCommandWithDetails(`du -sk ${shellQuote(installLocation)} 2>/dev/null`, { timeoutMs: 5000 });
                 sizeBytes = Number(stdout.trim().split(/\s+/)[0] || 0) * 1024;
             } else {
                 sizeBytes = stat.size;
@@ -255,7 +260,7 @@ async function detectUsage(pkg) {
 
     try {
         // Check if the binary exists and get its access time
-        const { stdout } = await captureShellCommand(`which ${shellQuote(cmd)} 2>/dev/null`);
+        const { stdout } = await captureShellCommandWithDetails(`which ${shellQuote(cmd)} 2>/dev/null`, { timeoutMs: 3000 });
         const binaryPath = stdout.trim();
         if (binaryPath && existsSync(binaryPath)) {
             const stat = statSync(binaryPath);
@@ -288,18 +293,15 @@ async function detectUsage(pkg) {
 // ─── Get Installed Package Names ──────────────────────────────────────
 
 export async function getInstalledPackageNames() {
-    const installed = [];
-    for (const pkg of loadPackages()) {
-        if (!pkg.validate) continue;
+    const packages = loadPackages().filter((pkg) => pkg.validate);
+    const validated = await mapWithConcurrency(packages, 8, async (pkg) => {
         try {
-            if ((await validate(pkg)) === 0) {
-                installed.push(pkg.name);
-            }
+            return (await validate(pkg)) === 0 ? pkg.name : null;
         } catch {
-            // Not installed
+            return null;
         }
-    }
-    return installed;
+    });
+    return validated.filter(Boolean);
 }
 
 // ─── Analyze All Packages ─────────────────────────────────────────────
@@ -335,12 +337,17 @@ export async function analyzePackages({ onProgress, useCache = true, silent = fa
     const installedNames = validated.filter(Boolean);
     log.success(`Found ${installedNames.length} installed packages`);
 
-    // Second pass: build profiles for installed packages
+    // Second pass: build profiles for installed packages. Bounded
+    // concurrency for the same reason as the first pass above - this one
+    // is the more expensive of the two (packagePrefix/which/du -sk/usage
+    // detection per package), and running it strictly sequentially over
+    // every *installed* package (not just registry-wide validate checks)
+    // was measured to make `package analyze --json` hang well past a
+    // minute on a real, populated dev machine.
     log.info("Building package profiles...");
-    for (let i = 0; i < installedNames.length; i++) {
-        const name = installedNames[i];
+    const built = await mapWithConcurrency(installedNames, 8, async (name, i) => {
         const pkg = allPackages.find((p) => p.name === name);
-        if (!pkg) continue;
+        if (!pkg) return null;
 
         if (onProgress) onProgress({ name, index: i, total: installedNames.length, status: "analyzing" });
 
@@ -349,23 +356,25 @@ export async function analyzePackages({ onProgress, useCache = true, silent = fa
             const cached = cache.profiles[name];
             // Use cached profile if less than 1 hour old
             if (cached._cachedAt && (Date.now() - cached._cachedAt) < 3600000) {
-                profiles.push(cached);
-                continue;
+                return cached;
             }
         }
 
+        let result = null;
         try {
             const profile = await buildPackageProfile(pkg, { installedPackages: installedNames });
             if (profile) {
                 profile._cachedAt = Date.now();
-                profiles.push(profile);
+                result = profile;
             }
         } catch (err) {
             log.warn(`  Could not analyze ${name}: ${err.message}`);
         }
 
         if (onProgress) onProgress({ name, index: i, total: installedNames.length, status: "done" });
-    }
+        return result;
+    });
+    profiles.push(...built.filter(Boolean));
 
     // Post-process: detect orphans, duplicates, outdated
     log.info("Running intelligence analysis...");

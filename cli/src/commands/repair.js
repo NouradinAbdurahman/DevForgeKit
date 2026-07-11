@@ -455,13 +455,14 @@ export function registerRepairCommand(program) {
                 sortBy: opts.sort,
                 limit: opts.limit
             });
-            if (history.length === 0) {
-                logger.info("No repair records found. Run 'devforgekit repair' to start.");
-                return;
-            }
 
             if (opts.json) {
                 console.log(JSON.stringify(history, null, 2));
+                return;
+            }
+
+            if (history.length === 0) {
+                logger.info("No repair records found. Run 'devforgekit repair' to start.");
                 return;
             }
 

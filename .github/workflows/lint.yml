@@ -1,7 +1,11 @@
 name: DevForgeKit Lint
 
+# Same duplicate-run fix as bootstrap.yml/e2e.yml/shellcheck.yml/
+# registry-smoke.yml: an unrestricted push+pull_request trigger runs
+# this identical job twice for the same commit on a feature branch.
 on:
   push:
+    branches: [main]
   pull_request:
 
 permissions:
