@@ -783,9 +783,9 @@ Learn more: docs/WorkspaceManager.md`);
 
     workspace
         .command("benchmark <name>")
-        .description("Benchmark core workspace operations (metadata, health, verify, snapshot, diff, switch, restore, bundle)")
+        .description("Benchmark core workspace operations. Read-only by default (metadata, health, verify, diff) - pass --ops to include mutating ones (snapshot, switch, restore, bundleExport, bundleImport), which write files and/or change your live git/ssh/docker/kubernetes/cloud-CLI identity")
         .option("--runs <n>", "number of runs per operation (default: 1)", "1")
-        .option("--ops <list>", "comma-separated list of operations to run")
+        .option("--ops <list>", "comma-separated list of operations to run (default: metadata,health,verify,diff - the read-only ones). Include snapshot/switch/restore/bundleExport/bundleImport explicitly to also benchmark those (mutating)")
         .option("--json", "output as JSON")
         .action(withErrorHandling(async function (name) {
             const opts = this.opts();

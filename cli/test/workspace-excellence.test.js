@@ -338,6 +338,57 @@ test("benchmarkWorkspace measures core operations", async () => {
     });
 });
 
+// Regression test for a real bug: `devforgekit workspace benchmark <name>`
+// used to default to running EVERY operation, including "switch" and
+// "restore" - both of which re-apply the workspace's live state for
+// real (git config --global, ~/.ssh/config Host blocks, docker/k8s
+// context, cloud CLI profile). A user running a plain "how fast is
+// this" benchmark would silently have their machine's real active
+// identity switched to whatever workspace they benchmarked, with no
+// flag needed to opt in. The default must now be limited to operations
+// confirmed to never touch live machine state.
+test("benchmarkWorkspace with no operations override only runs the safe, read-only subset by default", async () => {
+    await withTempHome(async () => {
+        createWorkspace({ name: "acme", description: "x" });
+        const result = await benchmarkWorkspace("acme", { runs: 1 });
+        const ranOps = result.results.map((r) => r.operation).sort();
+        assert.deepEqual(ranOps, ["diff", "health", "metadata", "verify"]);
+        assert.ok(!ranOps.includes("switch"), "switch must never run unless explicitly requested via --ops");
+        assert.ok(!ranOps.includes("restore"), "restore must never run unless explicitly requested via --ops");
+    });
+});
+
+test("benchmarkWorkspace still allows switch/restore/snapshot/bundle operations when explicitly requested via operations", async () => {
+    await withTempHome(async () => {
+        createWorkspace({ name: "acme", description: "x" });
+        const result = await benchmarkWorkspace("acme", {
+            operations: ["snapshot", "switch"],
+            runs: 1,
+        });
+        assert.deepEqual(result.results.map((r) => r.operation), ["snapshot", "switch"]);
+        assert.equal(result.summary.passed, 2);
+    });
+});
+
+// Regression test for a second real bug found in the same review: the
+// snapshot cleanup loop after a "snapshot"/"restore" benchmark run was
+// a no-op (empty try block with a stale comment claiming cleanup
+// happened elsewhere) - every benchmark run left real, permanent
+// snapshot files behind. Snapshots created during benchmarking must be
+// deleted again once timing is captured.
+test("benchmarkWorkspace's 'snapshot' operation cleans up the snapshots it creates, leaving no permanent artifacts", async () => {
+    await withTempHome(async () => {
+        createWorkspace({ name: "acme", description: "x" });
+        const { listSnapshots } = await import("../src/core/workspace/snapshot.js");
+        const before = listSnapshots("acme").length;
+
+        await benchmarkWorkspace("acme", { operations: ["snapshot"], runs: 3 });
+
+        const after = listSnapshots("acme").length;
+        assert.equal(after, before, "benchmarking 'snapshot' 3 times must not leave any snapshots behind");
+    });
+});
+
 test("formatBenchmarkResult produces readable output", async () => {
     await withTempHome(async () => {
         createWorkspace({ name: "acme", description: "x" });

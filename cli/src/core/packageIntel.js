@@ -27,6 +27,7 @@ import { buildDependencyGraph, detectCycles, detectDuplicateTools } from "./comp
 import { scanCompatibility, scoreCompatibility } from "./compatibility/engine.js";
 import { validate, install, uninstall, resolveInstallStep } from "./installer.js";
 import { runShellCommand, captureShellCommand, commandExists, shellQuote } from "./shell.js";
+import { mapWithConcurrency } from "./concurrency.js";
 import { listWorkspaces } from "./workspace/store.js";
 import { discoverPlugins } from "./plugins.js";
 import { scoreResults } from "./health.js";
@@ -303,9 +304,10 @@ export async function getInstalledPackageNames() {
 
 // ─── Analyze All Packages ─────────────────────────────────────────────
 
-export async function analyzePackages({ onProgress, useCache = true } = {}) {
-    logger.section("Package Intelligence: Analyze");
-    logger.info("Scanning all registry packages...\n");
+export async function analyzePackages({ onProgress, useCache = true, silent = false } = {}) {
+    const log = silent ? { section() {}, info() {}, success() {}, warn() {} } : logger;
+    log.section("Package Intelligence: Analyze");
+    log.info("Scanning all registry packages...\n");
 
     // Try to load cache
     let cache = null;
@@ -315,25 +317,26 @@ export async function analyzePackages({ onProgress, useCache = true } = {}) {
 
     const allPackages = loadPackages();
     const profiles = [];
-    const installedNames = [];
 
-    // First pass: detect installed packages
-    logger.info("Detecting installed packages...");
-    for (let i = 0; i < allPackages.length; i++) {
-        const pkg = allPackages[i];
-        if (!pkg.validate) continue;
+    // First pass: detect installed packages. Bounded concurrency (same
+    // worker pool doctor.js/componentManager.js use) instead of a plain
+    // sequential loop - validating all 261 packages one at a time here
+    // measured ~79s; each package shells out at least one real child
+    // process to validate.
+    log.info("Detecting installed packages...");
+    const validated = await mapWithConcurrency(allPackages, 8, async (pkg) => {
+        if (!pkg.validate) return null;
         try {
-            if ((await validate(pkg)) === 0) {
-                installedNames.push(pkg.name);
-            }
+            return (await validate(pkg)) === 0 ? pkg.name : null;
         } catch {
-            // Not installed
+            return null;
         }
-    }
-    logger.success(`Found ${installedNames.length} installed packages`);
+    });
+    const installedNames = validated.filter(Boolean);
+    log.success(`Found ${installedNames.length} installed packages`);
 
     // Second pass: build profiles for installed packages
-    logger.info("Building package profiles...");
+    log.info("Building package profiles...");
     for (let i = 0; i < installedNames.length; i++) {
         const name = installedNames[i];
         const pkg = allPackages.find((p) => p.name === name);
@@ -358,14 +361,14 @@ export async function analyzePackages({ onProgress, useCache = true } = {}) {
                 profiles.push(profile);
             }
         } catch (err) {
-            logger.warn(`  Could not analyze ${name}: ${err.message}`);
+            log.warn(`  Could not analyze ${name}: ${err.message}`);
         }
 
         if (onProgress) onProgress({ name, index: i, total: installedNames.length, status: "done" });
     }
 
     // Post-process: detect orphans, duplicates, outdated
-    logger.info("Running intelligence analysis...");
+    log.info("Running intelligence analysis...");
     const orphans = detectOrphans(profiles);
     const duplicates = await detectDuplicates(profiles);
     const outdated = await detectOutdated(profiles);
@@ -379,12 +382,12 @@ export async function analyzePackages({ onProgress, useCache = true } = {}) {
 
     // Summary
     const totalSize = profiles.reduce((acc, p) => acc + (p.sizeBytes || 0), 0);
-    logger.section("Analysis Complete");
-    logger.info(`Profiles: ${profiles.length}`);
-    logger.info(`Total size: ${formatBytes(totalSize)}`);
-    logger.info(`Orphans: ${orphans.length}`);
-    logger.info(`Duplicates: ${duplicates.length}`);
-    logger.info(`Outdated: ${outdated.length}`);
+    log.section("Analysis Complete");
+    log.info(`Profiles: ${profiles.length}`);
+    log.info(`Total size: ${formatBytes(totalSize)}`);
+    log.info(`Orphans: ${orphans.length}`);
+    log.info(`Duplicates: ${duplicates.length}`);
+    log.info(`Outdated: ${outdated.length}`);
 
     const result = {
         packageIntelVersion: PACKAGE_INTEL_VERSION,

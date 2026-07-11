@@ -62,6 +62,7 @@ export const INSTALL_STATUS = {
     BROKEN_DOWNLOAD: "broken-download",
     REMOVED_BY_VENDOR: "removed-by-vendor",
     UNTESTED: "untested",
+    NOT_INSTALLED: "not-installed",
     // Legacy aliases for backward compatibility with v1 tests/callers
     WORKING: "verified",
     BROKEN: "broken-registry-metadata",
@@ -173,6 +174,12 @@ export const STATUS_META = {
     [INSTALL_STATUS.UNTESTED]: {
         icon: "⚠", label: "Untested",
         description: "Package exists but has never been verified by DevForgeKit.",
+        responsibility: RESPONSIBILITY.NONE,
+        canDevForgeKitFix: false, canUserFix: false
+    },
+    [INSTALL_STATUS.NOT_INSTALLED]: {
+        icon: "○", label: "Not Installed",
+        description: "Not currently installed - run 'registry verify --install' to attempt a real installation.",
         responsibility: RESPONSIBILITY.NONE,
         canDevForgeKitFix: false, canUserFix: false
     }
@@ -684,13 +691,24 @@ export function getVerificationStatus(packageName) {
 // ─── Registry-wide audit ──────────────────────────────────────────────
 
 /**
- * Verify a single package: attempt install (or validate if already installed).
+ * Verify a single package: by default, only checks whether it's already
+ * installed (real `pkg.validate` shell command - read-only, never
+ * modifies anything). Only attempts a REAL package-manager install for
+ * a not-yet-installed package when `attemptInstall: true` is explicitly
+ * passed - this used to happen unconditionally, which meant `devforgekit
+ * registry verify` silently installed real software for every one of
+ * the ~261 registry packages not already present, despite "verify"
+ * being a name every other read-only-sounding command in this CLI
+ * (audit/check/doctor/lint/stats/list/...) is held to never do. See
+ * SECURITY.md / docs/CommandSafety.md for the naming convention this
+ * enforces: a command without an explicit mutating verb (install/
+ * remove/repair/regenerate/...) must never modify the user's machine.
  *
  * @param {Object} pkg - Package manifest
- * @param {Object} options - { onProgress, timeoutMs }
+ * @param {Object} options - { onProgress, timeoutMs, attemptInstall }
  * @returns {Promise<Object>} - Verification result
  */
-export async function verifyPackage(pkg, { onProgress, timeoutMs } = {}) {
+export async function verifyPackage(pkg, { onProgress, timeoutMs, attemptInstall = false } = {}) {
     // Dynamic import to avoid circular dependency (installer.js imports
     // from installAudit.js for diagnoseFailure/logInstallation)
     const { validate, installWithDetails } = await import("./installer.js");
@@ -715,6 +733,18 @@ export async function verifyPackage(pkg, { onProgress, timeoutMs } = {}) {
             success: true
         };
         updateVerificationStatus(pkg.name, INSTALL_STATUS.VERIFIED, result.verifiedAt);
+        if (onProgress) onProgress(result);
+        return result;
+    }
+
+    if (!attemptInstall) {
+        const result = {
+            name: pkg.name,
+            status: INSTALL_STATUS.NOT_INSTALLED,
+            verifiedAt: new Date().toISOString(),
+            method: "validate",
+            success: false
+        };
         if (onProgress) onProgress(result);
         return result;
     }
@@ -752,13 +782,13 @@ export async function verifyPackage(pkg, { onProgress, timeoutMs } = {}) {
  * @param {Object} options - { onProgress, timeoutMs, packages }
  * @returns {Promise<Object>} - { results, summary }
  */
-export async function verifyAllPackages({ onProgress, timeoutMs, packages } = {}) {
+export async function verifyAllPackages({ onProgress, timeoutMs, packages, attemptInstall = false } = {}) {
     const pkgs = packages || loadPackages();
     const results = [];
 
     for (let i = 0; i < pkgs.length; i++) {
         const pkg = pkgs[i];
-        const result = await verifyPackage(pkg, { onProgress, timeoutMs });
+        const result = await verifyPackage(pkg, { onProgress, timeoutMs, attemptInstall });
         results.push(result);
     }
 
@@ -789,6 +819,7 @@ export function buildVerificationSummary(results) {
         brokenDownload: 0,
         removedByVendor: 0,
         untested: 0,
+        notInstalled: 0,
         successRate: 0,
         reliability: 0
     };
@@ -842,6 +873,9 @@ export function buildVerificationSummary(results) {
                 break;
             case INSTALL_STATUS.REMOVED_BY_VENDOR:
                 summary.removedByVendor++;
+                break;
+            case INSTALL_STATUS.NOT_INSTALLED:
+                summary.notInstalled++;
                 break;
             default:
                 summary.untested++;

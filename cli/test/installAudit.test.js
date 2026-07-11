@@ -23,8 +23,22 @@ import {
     checkArchitectureSupport,
     mapFailureToStatus,
     getPackageDiagnostics,
-    formatInstallFailure
+    formatInstallFailure,
+    verifyPackage,
+    verifyAllPackages
 } from "../src/core/installAudit.js";
+
+async function withTempHomeAsync(fn) {
+    const originalHome = process.env.HOME;
+    const tempHome = mkdtempSync(path.join(tmpdir(), "devforgekit-audit-test-"));
+    process.env.HOME = tempHome;
+    try {
+        return await fn(tempHome);
+    } finally {
+        process.env.HOME = originalHome;
+        rmSync(tempHome, { recursive: true, force: true });
+    }
+}
 
 // Point HOME at a scratch directory to isolate from the developer's real
 // ~/.devforgekit (same pattern as all other test files).
@@ -726,5 +740,75 @@ test("registryDoctor detects broken dependencies", () => {
         ];
         const { issues } = registryDoctor({ packages });
         assert.ok(issues.some((i) => i.type === "broken_dependency" && i.package === "pkg-with-bad-dep"));
+    });
+});
+
+// ─── Regression: registry verify must be read-only by default ─────────
+//
+// Real bug found and fixed: `devforgekit registry verify` used to
+// unconditionally attempt a real package-manager install
+// (installWithDetails) for every registry package not already
+// installed - despite "verify" being exactly the kind of name every
+// other read-only command in this CLI (audit/check/doctor/lint/stats/
+// list/...) is held to never do. It was run by accident against a real
+// development machine before this was caught. verifyPackage/
+// verifyAllPackages must now default to attemptInstall: false and only
+// ever run the real install command when the caller explicitly opts in.
+//
+// A synthetic package's "install" step writes a canary file - if the
+// canary never appears, the install command was never executed. This
+// directly observes the actual side effect (or absence of one) rather
+// than just asserting a returned status string, so it would have caught
+// the original bug even if the status/label text had looked plausible.
+test("verifyPackage never attempts a real install by default (attemptInstall omitted) - proven by a canary file that must never appear", async () => {
+    await withTempHomeAsync(async (tempHome) => {
+        const canaryFile = path.join(tempHome, "install-was-attempted.canary");
+        const pkg = {
+            name: "never-installed-test-pkg",
+            category: "utilities",
+            validate: "false", // always exits non-zero -> never "already installed"
+            install: { method: "shell", command: `touch ${canaryFile}` }
+        };
+
+        const result = await verifyPackage(pkg, {});
+
+        assert.equal(result.status, INSTALL_STATUS.NOT_INSTALLED);
+        assert.equal(result.success, false);
+        const { existsSync } = await import("node:fs");
+        assert.equal(existsSync(canaryFile), false, "verifyPackage must never run the install command unless attemptInstall: true is explicitly passed");
+    });
+});
+
+test("verifyPackage still genuinely attempts a real install when attemptInstall: true is explicitly passed (proves the canary methodology itself works)", async () => {
+    await withTempHomeAsync(async (tempHome) => {
+        const canaryFile = path.join(tempHome, "install-was-attempted.canary");
+        const pkg = {
+            name: "never-installed-test-pkg-2",
+            category: "utilities",
+            validate: "false",
+            install: { method: "shell", command: `touch ${canaryFile}` }
+        };
+
+        await verifyPackage(pkg, { attemptInstall: true });
+
+        const { existsSync } = await import("node:fs");
+        assert.equal(existsSync(canaryFile), true, "with attemptInstall: true, the real install command must actually run");
+    });
+});
+
+test("verifyAllPackages defaults to attemptInstall: false and reports notInstalled in the summary, not a false failure/success status", async () => {
+    await withTempHomeAsync(async (tempHome) => {
+        const canaryFile = path.join(tempHome, "install-was-attempted-all.canary");
+        const packages = [
+            { name: "never-installed-a", category: "utilities", validate: "false", install: { method: "shell", command: `touch ${canaryFile}` } },
+            { name: "never-installed-b", category: "utilities", validate: "false", install: { method: "shell", command: "true" } }
+        ];
+
+        const { results, summary } = await verifyAllPackages({ packages });
+
+        const { existsSync } = await import("node:fs");
+        assert.equal(existsSync(canaryFile), false, "verifyAllPackages must never install anything by default");
+        assert.equal(summary.notInstalled, 2);
+        assert.ok(results.every((r) => r.status === INSTALL_STATUS.NOT_INSTALLED));
     });
 });

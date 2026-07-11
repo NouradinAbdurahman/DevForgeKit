@@ -25,9 +25,9 @@ export class KeychainUnavailableError extends Error {
 // before attempting any keychain operation. This is the gate that
 // prevents GUI dialogs — if any check fails, we return an error instead
 // of letting `security` prompt the user.
-function detectKeychain(execImpl) {
+function detectKeychain(execImpl, platform = process.platform) {
     // 1. Must be macOS
-    if (process.platform !== "darwin") {
+    if (platform !== "darwin") {
         return { available: false, reason: "not macOS" };
     }
 
@@ -63,12 +63,21 @@ export class KeychainBackend extends CredentialBackend {
     // is always passed as a literal argv element and can never break out
     // of a shell string) without ever touching the real macOS Keychain,
     // which no automated test is allowed to do (see
-    // ai-credential-backend.test.js).
-    constructor({ execFileImpl = execFileSync, execImpl = execSync } = {}) {
+    // ai-credential-backend.test.js). `platform` is injectable too and
+    // defaults to the real process.platform - this repo's own CI only
+    // runs Node tests on ubuntu-latest (see cli.yml), so without this
+    // override the injection-safety regression tests above could never
+    // actually execute in CI at all (detectKeychain's real "must be
+    // macOS" gate would report unavailable and every set()/get()/
+    // remove()/exists() call would throw before reaching the injected
+    // exec functions) - forcing platform: "darwin" here tests the actual
+    // security property (safe command construction) independently of
+    // whether this specific host would really use this backend.
+    constructor({ execFileImpl = execFileSync, execImpl = execSync, platform = process.platform } = {}) {
         super();
         this._execFile = execFileImpl;
         this._exec = execImpl;
-        const detection = detectKeychain(this._exec);
+        const detection = detectKeychain(this._exec, platform);
         this._available = detection.available;
         this._reason = detection.reason || null;
     }

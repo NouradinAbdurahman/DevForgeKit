@@ -69,7 +69,8 @@ export function registerRepairCommand(program) {
             const record = await runFullRepair({
                 assumeYes: opts.yes || false,
                 skipBenchmark: opts.skipBenchmark !== false,
-                dryRun: opts.dryRun || false
+                dryRun: opts.dryRun || false,
+                silent: Boolean(opts.json)
             });
             if (opts.json) {
                 console.log(JSON.stringify(record, null, 2));
@@ -119,7 +120,7 @@ export function registerRepairCommand(program) {
                 return;
             }
 
-            const { fixed, failed } = await executeRepairs(plan, { assumeYes: opts.yes || false });
+            const { fixed, failed } = await executeRepairs(plan, { assumeYes: opts.yes || false, silent: Boolean(opts.json) });
 
             if (opts.json) {
                 console.log(JSON.stringify({ issues, fixed, failed }, null, 2));
@@ -141,7 +142,7 @@ export function registerRepairCommand(program) {
         .option("--category <cat>", "filter by category")
         .action(withErrorHandling(async function () {
             const opts = this.opts();
-            let issues = await scanIssues();
+            let issues = await scanIssues({ silent: Boolean(opts.json) });
 
             if (opts.category) {
                 issues = issues.filter((i) => i.category === opts.category);
@@ -191,17 +192,20 @@ export function registerRepairCommand(program) {
         .option("--json", "output plan as JSON")
         .action(withErrorHandling(async function () {
             const opts = this.opts();
-            const issues = await scanIssues();
-
-            if (issues.length === 0) {
-                logger.success("No issues detected - nothing to plan.");
-                return;
-            }
-
+            const issues = await scanIssues({ silent: Boolean(opts.json) });
             const plan = planRepairs(issues);
 
             if (opts.json) {
+                // planRepairs([]) already produces a valid, empty plan -
+                // always emit real JSON here rather than an early-return
+                // human message, which would otherwise leave --json with
+                // no output at all whenever there happen to be zero issues.
                 console.log(JSON.stringify(opts.dryRun ? dryRunPlan(plan) : plan, null, 2));
+                return;
+            }
+
+            if (issues.length === 0) {
+                logger.success("No issues detected - nothing to plan.");
                 return;
             }
 
@@ -306,17 +310,20 @@ export function registerRepairCommand(program) {
         .option("--json", "output as JSON")
         .action(withErrorHandling(async function () {
             const opts = this.opts();
-            const issues = await scanIssues();
-
-            if (issues.length === 0) {
-                logger.success("No issues detected - nothing to explain.");
-                return;
-            }
-
+            const issues = await scanIssues({ silent: Boolean(opts.json) });
             const plan = planRepairs(issues);
 
             if (opts.json) {
+                // Same reasoning as `repair plan --json`: emit real JSON
+                // (an empty array/plan is still valid) rather than an
+                // early-return human message that would leave --json
+                // with no output whenever there happen to be zero issues.
                 console.log(JSON.stringify(opts.plan ? plan : issues.map(explainRepair), null, 2));
+                return;
+            }
+
+            if (issues.length === 0) {
+                logger.success("No issues detected - nothing to explain.");
                 return;
             }
 
@@ -528,7 +535,7 @@ export function registerRepairCommand(program) {
         .option("--json", "output as JSON")
         .action(withErrorHandling(async function () {
             const opts = this.opts();
-            const result = await benchmarkRepairEngine({ iterations: opts.iterations || 3 });
+            const result = await benchmarkRepairEngine({ iterations: opts.iterations || 3, silent: Boolean(opts.json) });
             if (opts.json) {
                 console.log(JSON.stringify(result, null, 2));
             }

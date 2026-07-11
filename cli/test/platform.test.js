@@ -4,6 +4,9 @@
 // this suite, rather than mocking os.platform() globally.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import {
     getPlatform,
     setPlatformForTesting,
@@ -327,33 +330,54 @@ test("installer resolveInstallStep uses platformInstall on Windows", async () =>
     }
 });
 
-// The async shell-out methods below (packagePrefix/outdatedPackages/
-// upgradeCommand/osVersion) have no injected existsSync/captureShellCommand
-// override - detectPackageManager() is a private module-level function in
-// linux.js/windows.js, not part of the public contract. Run against this
-// Mac test host (guaranteed to have no apt/dnf/pacman/winget/choco/scoop
-// binaries at their real Linux/Windows paths, and no /etc/os-release or
-// /proc/version), these exercise the real "no package manager detected"
-// fallback path end to end - previously asserted nowhere (see the Phase 3
-// cross-platform audit). Verifying the apt/dnf/pacman/winget/choco/scoop
-// command-building branches themselves needs a real Linux/Windows host.
+// LinuxPlatform's detection paths (apt/dnf/pacman binaries, /etc/os-release,
+// /proc/version) are constructor-injectable specifically so these "degrades
+// gracefully with nothing detected" tests are deterministic regardless of
+// what the real host running the test suite happens to have - a real
+// bug this same assumption caused: the previous, unparameterized version
+// of these tests only ever passed on macOS (no apt/dnf/pacman/os-release
+// there), and silently failed the first time cli.yml's `test` job actually
+// ran on its real ubuntu-latest host (apt genuinely exists there, so
+// "no package manager detected" was never really being tested at all).
+const NO_LINUX_PM = { aptPath: "/nonexistent/apt", dnfPath: "/nonexistent/dnf", pacmanPath: "/nonexistent/pacman" };
+const NO_OS_RELEASE = { osReleasePath: "/nonexistent/os-release", procVersionPath: "/nonexistent/proc-version" };
 
-test("LinuxPlatform: packagePrefix()/outdatedPackages() degrade to null/[] rather than throwing with no package manager detected", async () => {
-    const platform = new LinuxPlatform();
+test("LinuxPlatform: packagePrefix()/outdatedPackages() degrade to null/[] with no package manager detected", async () => {
+    const platform = new LinuxPlatform(NO_LINUX_PM);
     assert.equal(await platform.packagePrefix("wget"), null);
     assert.deepEqual(await platform.outdatedPackages(), []);
 });
 
 test("LinuxPlatform: upgradeCommand() throws PlatformNotSupportedError with no package manager detected", () => {
-    const platform = new LinuxPlatform();
+    const platform = new LinuxPlatform(NO_LINUX_PM);
     assert.throws(() => platform.upgradeCommand("wget"), PlatformNotSupportedError);
 });
 
-test("LinuxPlatform: osVersion()/packageManagerCacheDir()/wsl are honest (null/false) off a real Linux host", async () => {
-    const platform = new LinuxPlatform();
+test("LinuxPlatform: osVersion()/packageManagerCacheDir()/wsl are honest (null/false) with no os-release/proc-version/package manager", async () => {
+    const platform = new LinuxPlatform({ ...NO_LINUX_PM, ...NO_OS_RELEASE });
     assert.equal(await platform.osVersion(), null);
     assert.equal(platform.packageManagerCacheDir(), null);
     assert.equal(platform.wsl, false);
+});
+
+test("LinuxPlatform: packageManagerId()/osVersion()/wsl detect the real host when paths exist (proves the injection seam isn't just a no-op)", async () => {
+    const workDir = mkdtempSync(path.join(tmpdir(), "devforgekit-linux-platform-test-"));
+    try {
+        const aptPath = path.join(workDir, "apt");
+        writeFileSync(aptPath, "");
+        const osReleasePath = path.join(workDir, "os-release");
+        writeFileSync(osReleasePath, 'PRETTY_NAME="Test Linux 1.0"\n');
+        const procVersionPath = path.join(workDir, "proc-version");
+        writeFileSync(procVersionPath, "Linux version 6.6.0-microsoft-standard-WSL2\n");
+
+        const platform = new LinuxPlatform({ aptPath, dnfPath: "/nonexistent/dnf", pacmanPath: "/nonexistent/pacman", osReleasePath, procVersionPath });
+        assert.equal(platform.packageManagerId(), "apt");
+        assert.equal(platform.packageManagerCacheDir(), "/var/cache/apt/archives");
+        assert.equal(await platform.osVersion(), "Test Linux 1.0");
+        assert.equal(platform.wsl, true);
+    } finally {
+        rmSync(workDir, { recursive: true, force: true });
+    }
 });
 
 test("WindowsPlatform: packagePrefix()/outdatedPackages() degrade to null/[] rather than throwing with no package manager detected", async () => {

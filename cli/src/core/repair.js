@@ -996,9 +996,18 @@ const SCANNERS = [
 
 // ─── Scan ─────────────────────────────────────────────────────────────
 
-export async function scanIssues({ onProgress } = {}) {
-    logger.section("Repair Engine: Scan");
-    logger.info(`Running ${SCANNERS.length} scanners...\n`);
+// scanIssues({ onProgress, silent }) -> issues[]. `silent: true` (every
+// --json caller in commands/repair.js passes this) suppresses every
+// logger.* call this function makes - info/success/section go to
+// stdout via console.log (see logger.js), and with no gate here they
+// used to land directly in the middle of a --json command's JSON
+// output, corrupting it for any script/jq consumer. onProgress still
+// fires either way, so the TUI's live progress display (which renders
+// its own UI rather than reading stdout text) is unaffected.
+export async function scanIssues({ onProgress, silent = false } = {}) {
+    const log = silent ? { section() {}, info() {}, success() {}, warn() {} } : logger;
+    log.section("Repair Engine: Scan");
+    log.info(`Running ${SCANNERS.length} scanners...\n`);
 
     const allIssues = [];
 
@@ -1014,14 +1023,14 @@ export async function scanIssues({ onProgress } = {}) {
             const info = issues.filter((i) => i.severity === "INFO").length;
 
             if (issues.length === 0) {
-                logger.success(`  ${scanner.label}: OK`);
+                log.success(`  ${scanner.label}: OK`);
             } else {
-                logger.warn(`  ${scanner.label}: ${issues.length} issue(s) (${critical} critical, ${warnings} warning, ${info} info)`);
+                log.warn(`  ${scanner.label}: ${issues.length} issue(s) (${critical} critical, ${warnings} warning, ${info} info)`);
             }
 
             if (onProgress) onProgress({ scanner: scanner.name, label: scanner.label, index: i, total: SCANNERS.length, status: "done", count: issues.length });
         } catch (err) {
-            logger.warn(`  ${scanner.label}: scanner error - ${err.message}`);
+            log.warn(`  ${scanner.label}: scanner error - ${err.message}`);
             if (onProgress) onProgress({ scanner: scanner.name, label: scanner.label, index: i, total: SCANNERS.length, status: "error", error: err.message });
         }
     }
@@ -1029,11 +1038,11 @@ export async function scanIssues({ onProgress } = {}) {
     // Sort by severity
     allIssues.sort((a, b) => (SEVERITY_ORDER[a.severity] || 99) - (SEVERITY_ORDER[b.severity] || 99));
 
-    logger.section("Scan Complete");
+    log.section("Scan Complete");
     const critical = allIssues.filter((i) => i.severity === "CRITICAL" || i.severity === "FATAL").length;
     const warnings = allIssues.filter((i) => i.severity === "WARNING").length;
     const info = allIssues.filter((i) => i.severity === "INFO").length;
-    logger.info(`Found ${allIssues.length} issue(s): ${critical} critical, ${warnings} warning, ${info} info`);
+    log.info(`Found ${allIssues.length} issue(s): ${critical} critical, ${warnings} warning, ${info} info`);
 
     return allIssues;
 }
@@ -1132,17 +1141,19 @@ export function planRepairs(issues) {
 
 // ─── Execute (Phase 4: Safety, Phase 7: Progress, Phase 8: Rollback) ──
 
-export async function executeRepairs(plan, { assumeYes = false, onProgress, rollbackSnapshot, dryRun = false } = {}) {
+export async function executeRepairs(plan, { assumeYes = false, onProgress, rollbackSnapshot, dryRun = false, silent = false } = {}) {
+    const log = silent ? { section() {}, info() {}, success() {}, warn() {}, error() {} } : logger;
+    const print = silent ? () => {} : (...args) => console.log(...args);
     if (dryRun) return dryRunPlan(plan);
 
-    logger.section("Repair Engine: Execute");
-    logger.info(`Executing ${plan.totalRepairs} repair(s)...`);
-    logger.info(`Risk: ${plan.riskLabel} | Estimated time: ${plan.estimatedTime}`);
+    log.section("Repair Engine: Execute");
+    log.info(`Executing ${plan.totalRepairs} repair(s)...`);
+    log.info(`Risk: ${plan.riskLabel} | Estimated time: ${plan.estimatedTime}`);
     if (plan.rollbackUnavailableCount > 0) {
-        logger.warn(`${plan.rollbackUnavailableCount} repair(s) cannot be rolled back`);
+        log.warn(`${plan.rollbackUnavailableCount} repair(s) cannot be rolled back`);
     }
-    if (plan.requiresRestart) logger.warn("Some repairs require a restart");
-    console.log("");
+    if (plan.requiresRestart) log.warn("Some repairs require a restart");
+    print("");
 
     const results = [];
     const startTime = Date.now();
@@ -1159,9 +1170,9 @@ export async function executeRepairs(plan, { assumeYes = false, onProgress, roll
         const elapsedS = Math.round((Date.now() - startTime) / 1000);
         const avgPerRepair = i > 0 ? elapsedS / i : 0;
         const remainingS = Math.round(avgPerRepair * (plan.totalRepairs - i));
-        console.log(`  Repair ${i + 1} of ${plan.totalRepairs}: ${issue.title}`);
-        console.log(`  ${bar} ${progressPct}%  Elapsed: ${elapsedS}s  Remaining: ~${remainingS}s`);
-        console.log("");
+        print(`  Repair ${i + 1} of ${plan.totalRepairs}: ${issue.title}`);
+        print(`  ${bar} ${progressPct}%  Elapsed: ${elapsedS}s  Remaining: ~${remainingS}s`);
+        print("");
 
         if (onProgress) onProgress({ issue, index: i, total: plan.totalRepairs, status: "starting", title: issue.title, progressPct, elapsedS, remainingS });
 
@@ -1169,10 +1180,10 @@ export async function executeRepairs(plan, { assumeYes = false, onProgress, roll
         const prereq = await validatePrerequisites(issue.action);
         if (!prereq.ok) {
             const messages = prereq.checks.filter((c) => !c.ok).map((c) => c.message);
-            logger.warn(`  ⚠ Skipping: ${issue.description} - prerequisite: ${messages.join(", ")}`);
+            log.warn(`  ⚠ Skipping: ${issue.description} - prerequisite: ${messages.join(", ")}`);
             results.push({ issue, ok: false, skipped: true, reason: "prerequisites", checks: prereq.checks });
             if (onProgress) onProgress({ issue, index: i, total: plan.totalRepairs, status: "skipped", reason: "prerequisites" });
-            console.log("");
+            print("");
             continue;
         }
 
@@ -1190,15 +1201,15 @@ export async function executeRepairs(plan, { assumeYes = false, onProgress, roll
             ].join("\n");
             const shouldFix = await confirm(confirmMsg, false);
             if (!shouldFix) {
-                logger.info(`  Skipped: ${issue.description}`);
+                log.info(`  Skipped: ${issue.description}`);
                 results.push({ issue, ok: false, skipped: true });
                 if (onProgress) onProgress({ issue, index: i, total: plan.totalRepairs, status: "skipped" });
-                console.log("");
+                print("");
                 continue;
             }
         }
 
-        logger.info(`  Repairing: ${issue.description}`);
+        log.info(`  Repairing: ${issue.description}`);
         if (onProgress) onProgress({ issue, index: i, total: plan.totalRepairs, status: "repairing", title: issue.title });
 
         // Phase 8: Per-repair file backup for rollback
@@ -1217,19 +1228,19 @@ export async function executeRepairs(plan, { assumeYes = false, onProgress, roll
             results.push({ issue, ...repairResult, elapsedMs, fileBackups });
 
             if (repairResult.ok) {
-                logger.success(`  ✓ Fixed: ${issue.description} (${(elapsedMs / 1000).toFixed(1)}s)`);
+                log.success(`  ✓ Fixed: ${issue.description} (${(elapsedMs / 1000).toFixed(1)}s)`);
                 if (onProgress) onProgress({ issue, index: i, total: plan.totalRepairs, status: "done", ok: true, elapsedMs });
             } else {
-                logger.warn(`  ✗ Could not fix: ${issue.description} - ${repairResult.error || "unknown"}`);
+                log.warn(`  ✗ Could not fix: ${issue.description} - ${repairResult.error || "unknown"}`);
                 if (onProgress) onProgress({ issue, index: i, total: plan.totalRepairs, status: "done", ok: false, error: repairResult.error, elapsedMs });
             }
         } catch (err) {
             const elapsedMs = Date.now() - repairStartTime;
             results.push({ issue, ok: false, error: err.message, elapsedMs, fileBackups });
-            logger.error(`  ✗ Failed: ${issue.description} - ${err.message}`);
+            log.error(`  ✗ Failed: ${issue.description} - ${err.message}`);
             if (onProgress) onProgress({ issue, index: i, total: plan.totalRepairs, status: "error", error: err.message, elapsedMs });
         }
-        console.log("");
+        print("");
     }
 
     // Phase 7: Final progress summary
@@ -1240,13 +1251,13 @@ export async function executeRepairs(plan, { assumeYes = false, onProgress, roll
     const filesModified = results.filter((r) => r.ok && r.fileBackups && Object.keys(r.fileBackups).length > 0).length;
     const rollbackAvailable = results.some((r) => r.fileBackups && Object.keys(r.fileBackups).length > 0);
 
-    logger.section("Repairs Complete");
-    console.log(`  ✓ Fixed:          ${fixed}`);
-    console.log(`  ✗ Failed:         ${failed}`);
-    console.log(`  ⚠ Skipped:        ${skipped}`);
-    console.log(`  📁 Files modified: ${filesModified}`);
-    console.log(`  ↩ Rollback:       ${rollbackAvailable ? "Available" : "Not available"}`);
-    console.log(`  ⏱ Duration:       ${totalElapsedS}s`);
+    log.section("Repairs Complete");
+    print(`  ✓ Fixed:          ${fixed}`);
+    print(`  ✗ Failed:         ${failed}`);
+    print(`  ⚠ Skipped:        ${skipped}`);
+    print(`  📁 Files modified: ${filesModified}`);
+    print(`  ↩ Rollback:       ${rollbackAvailable ? "Available" : "Not available"}`);
+    print(`  ⏱ Duration:       ${totalElapsedS}s`);
 
     return { results, fixed, failed, skipped, filesModified, rollbackAvailable, rollbackSnapshot, durationMs: Date.now() - startTime };
 }
@@ -1311,13 +1322,14 @@ async function executeRepairAction(issue) {
 
 // ─── Verify ───────────────────────────────────────────────────────────
 
-export async function verifyRepairs({ runBenchmark: runBench = false } = {}) {
-    logger.section("Repair Engine: Verify");
+export async function verifyRepairs({ runBenchmark: runBench = false, silent = false } = {}) {
+    const log = silent ? { section() {}, info() {}, success() {}, warn() {} } : logger;
+    log.section("Repair Engine: Verify");
 
     const results = [];
 
     // 1. Compatibility check
-    logger.info("Running compatibility scan...");
+    log.info("Running compatibility scan...");
     try {
         const installed = await getInstalledPackageNames();
         const compatResult = await scanCompatibility(installed);
@@ -1329,14 +1341,14 @@ export async function verifyRepairs({ runBenchmark: runBench = false } = {}) {
             critical: compatResult.critical,
             warnings: compatResult.warn
         });
-        logger.success(`  Compatibility: ${compatResult.score}% - ${compatResult.verdict}`);
+        log.success(`  Compatibility: ${compatResult.score}% - ${compatResult.verdict}`);
     } catch (err) {
         results.push({ check: "Compatibility", status: "WARNING", error: err.message });
-        logger.warn(`  Compatibility: could not run - ${err.message}`);
+        log.warn(`  Compatibility: could not run - ${err.message}`);
     }
 
     // 2. Health score
-    logger.info("Calculating health score...");
+    log.info("Calculating health score...");
     try {
         const installResults = [];
         for (const pkg of loadPackages()) {
@@ -1354,14 +1366,14 @@ export async function verifyRepairs({ runBenchmark: runBench = false } = {}) {
             score: health.score,
             verdict: health.verdict
         });
-        logger.success(`  Health: ${health.score}% - ${health.verdict}`);
+        log.success(`  Health: ${health.score}% - ${health.verdict}`);
     } catch (err) {
         results.push({ check: "Health Score", status: "WARNING", error: err.message });
-        logger.warn(`  Health: could not calculate - ${err.message}`);
+        log.warn(`  Health: could not calculate - ${err.message}`);
     }
 
     // 3. Workspace validation
-    logger.info("Validating workspaces...");
+    log.info("Validating workspaces...");
     try {
         const workspaces = listWorkspaces();
         const invalid = workspaces.filter((w) => !w.valid);
@@ -1371,14 +1383,14 @@ export async function verifyRepairs({ runBenchmark: runBench = false } = {}) {
             total: workspaces.length,
             invalid: invalid.length
         });
-        logger.success(`  Workspaces: ${workspaces.length - invalid.length}/${workspaces.length} valid`);
+        log.success(`  Workspaces: ${workspaces.length - invalid.length}/${workspaces.length} valid`);
     } catch (err) {
         results.push({ check: "Workspaces", status: "WARNING", error: err.message });
-        logger.warn(`  Workspaces: could not validate - ${err.message}`);
+        log.warn(`  Workspaces: could not validate - ${err.message}`);
     }
 
     // 4. Plugin validation
-    logger.info("Validating plugins...");
+    log.info("Validating plugins...");
     try {
         const plugins = discoverPlugins();
         const invalid = plugins.filter((p) => !p.valid);
@@ -1388,14 +1400,14 @@ export async function verifyRepairs({ runBenchmark: runBench = false } = {}) {
             total: plugins.length,
             invalid: invalid.length
         });
-        logger.success(`  Plugins: ${plugins.length - invalid.length}/${plugins.length} valid`);
+        log.success(`  Plugins: ${plugins.length - invalid.length}/${plugins.length} valid`);
     } catch (err) {
         results.push({ check: "Plugins", status: "WARNING", error: err.message });
-        logger.warn(`  Plugins: could not validate - ${err.message}`);
+        log.warn(`  Plugins: could not validate - ${err.message}`);
     }
 
     // 5. Config validation
-    logger.info("Validating configuration...");
+    log.info("Validating configuration...");
     try {
         const config = loadConfig();
         const { KNOWN_PROVIDERS } = await import("./ai/providers/index.js");
@@ -1404,15 +1416,15 @@ export async function verifyRepairs({ runBenchmark: runBench = false } = {}) {
             check: "Configuration",
             status: configOk ? "PASS" : "WARNING"
         });
-        logger.success(`  Configuration: ${configOk ? "valid" : "issues found"}`);
+        log.success(`  Configuration: ${configOk ? "valid" : "issues found"}`);
     } catch (err) {
         results.push({ check: "Configuration", status: "WARNING", error: err.message });
-        logger.warn(`  Configuration: could not validate - ${err.message}`);
+        log.warn(`  Configuration: could not validate - ${err.message}`);
     }
 
     // 6. Benchmark (optional)
     if (runBench) {
-        logger.info("Running quick benchmark...");
+        log.info("Running quick benchmark...");
         try {
             const { runBenchmark: benchRun } = await import("./benchmark.js");
             const benchResult = await benchRun({ profile: "quick" });
@@ -1422,18 +1434,18 @@ export async function verifyRepairs({ runBenchmark: runBench = false } = {}) {
                 score: benchResult.overallScore,
                 grade: benchResult.overallGrade
             });
-            logger.success(`  Benchmark: ${benchResult.overallScore}/100 (${benchResult.overallGrade})`);
+            log.success(`  Benchmark: ${benchResult.overallScore}/100 (${benchResult.overallGrade})`);
         } catch (err) {
             results.push({ check: "Benchmark", status: "WARNING", error: err.message });
-            logger.warn(`  Benchmark: could not run - ${err.message}`);
+            log.warn(`  Benchmark: could not run - ${err.message}`);
         }
     }
 
     // Summary
     const healthResults = results.map((r) => ({ status: r.status }));
     const health = scoreResults(healthResults);
-    logger.section("Verification Complete");
-    logger.success(`Overall: ${health.score}% - ${health.verdict}`);
+    log.section("Verification Complete");
+    log.success(`Overall: ${health.score}% - ${health.verdict}`);
 
     return { results, health };
 }
@@ -1991,16 +2003,25 @@ export function computeQualityScore(execution, verification) {
 
 // ─── Full Repair Pipeline (Phase 5: Dry-run support) ──────────────────
 
-export async function runFullRepair({ assumeYes = false, skipBenchmark = true, onProgress, dryRun = false } = {}) {
+// silent: true (repair run --json/repair install --json pass this)
+// suppresses every logger.*/console.log line this function and its
+// dry-run/plan preview print - without it, every one of those lines
+// (section headers, per-issue previews, benchmark/quality summaries)
+// lands on stdout ahead of the final JSON.stringify(record), corrupting
+// it for any script/jq consumer, the same class of bug fixed in
+// scanIssues() above.
+export async function runFullRepair({ assumeYes = false, skipBenchmark = true, onProgress, dryRun = false, silent = false } = {}) {
+    const log = silent ? { section() {}, info() {}, success() {}, warn() {} } : logger;
+    const print = silent ? () => {} : (...args) => console.log(...args);
     const startTime = Date.now();
     const createdAt = new Date().toISOString();
     const id = makeRepairId(createdAt);
 
     // Stage 1: Scan
-    const issues = await scanIssues({ onProgress });
+    const issues = await scanIssues({ onProgress, silent });
 
     if (issues.length === 0) {
-        logger.success("No issues detected - environment is healthy!");
+        log.success("No issues detected - environment is healthy!");
         return { id, issues: [], fixed: 0, failed: 0, skipped: 0, durationMs: Date.now() - startTime };
     }
 
@@ -2008,36 +2029,36 @@ export async function runFullRepair({ assumeYes = false, skipBenchmark = true, o
     const plan = planRepairs(issues);
 
     if (dryRun) {
-        logger.section("Repair Engine: Dry Run");
-        logger.info(`Repairs: ${plan.totalRepairs} (plus ${plan.totalInfo} informational)`);
-        logger.info(`Estimated time: ${plan.estimatedTime}`);
-        logger.info(`Risk level: ${plan.riskLabel}`);
-        if (plan.requiresRestart) logger.warn("Some repairs require a restart");
+        log.section("Repair Engine: Dry Run");
+        log.info(`Repairs: ${plan.totalRepairs} (plus ${plan.totalInfo} informational)`);
+        log.info(`Estimated time: ${plan.estimatedTime}`);
+        log.info(`Risk level: ${plan.riskLabel}`);
+        if (plan.requiresRestart) log.warn("Some repairs require a restart");
         if (plan.filesAffected.length > 0) {
-            logger.info(`Files affected: ${plan.filesAffected.join(", ")}`);
+            log.info(`Files affected: ${plan.filesAffected.join(", ")}`);
         }
         if (plan.packagesAffected.length > 0) {
-            logger.info(`Packages affected: ${plan.packagesAffected.join(", ")}`);
+            log.info(`Packages affected: ${plan.packagesAffected.join(", ")}`);
         }
-        logger.info("");
+        log.info("");
         for (let i = 0; i < plan.issues.length; i++) {
             const issue = plan.issues[i];
-            console.log(`  ${i + 1}. [${issue.severity}] ${issue.description}`);
-            console.log(`     Action: ${issue.action?.type} | Risk: ${issue.riskLabel}`);
-            console.log(`     Fix: ${issue.fix}`);
+            print(`  ${i + 1}. [${issue.severity}] ${issue.description}`);
+            print(`     Action: ${issue.action?.type} | Risk: ${issue.riskLabel}`);
+            print(`     Fix: ${issue.fix}`);
         }
         return dryRunPlan(plan);
     }
 
-    logger.section("Repair Plan");
-    logger.info(`Repairs: ${plan.totalRepairs} (plus ${plan.totalInfo} informational)`);
-    logger.info(`Estimated time: ${plan.estimatedTime}`);
-    logger.info(`Risk level: ${plan.riskLabel}`);
-    if (plan.requiresRestart) logger.warn("Some repairs require a restart");
+    log.section("Repair Plan");
+    log.info(`Repairs: ${plan.totalRepairs} (plus ${plan.totalInfo} informational)`);
+    log.info(`Estimated time: ${plan.estimatedTime}`);
+    log.info(`Risk level: ${plan.riskLabel}`);
+    if (plan.requiresRestart) log.warn("Some repairs require a restart");
     for (let i = 0; i < plan.issues.length; i++) {
         const issue = plan.issues[i];
-        console.log(`  ${i + 1}. [${issue.severity}] ${issue.description}`);
-        console.log(`     Fix: ${issue.fix} (Risk: ${issue.riskLabel})`);
+        print(`  ${i + 1}. [${issue.severity}] ${issue.description}`);
+        print(`     Fix: ${issue.fix} (Risk: ${issue.riskLabel})`);
     }
 
     // Stage 3: Create rollback point
@@ -2045,7 +2066,7 @@ export async function runFullRepair({ assumeYes = false, skipBenchmark = true, o
     if (!assumeYes) {
         const shouldContinue = await confirm("\nProceed with repairs? A rollback snapshot will be created first.", false);
         if (!shouldContinue) {
-            logger.info("Repair cancelled by user");
+            log.info("Repair cancelled by user");
             return { id, issues, fixed: 0, failed: 0, skipped: 0, cancelled: true, durationMs: Date.now() - startTime };
         }
     }
@@ -2057,31 +2078,31 @@ export async function runFullRepair({ assumeYes = false, skipBenchmark = true, o
     if (!skipBenchmark) {
         try {
             const { runBenchmark } = await import("./benchmark.js");
-            logger.info("Running pre-repair benchmark...");
-            benchmarkBefore = await runBenchmark({ profile: "quick" });
+            log.info("Running pre-repair benchmark...");
+            benchmarkBefore = await runBenchmark({ profile: "quick", silent });
         } catch {
             // Non-critical
         }
     }
 
     // Stage 4: Execute
-    const execution = await executeRepairs(plan, { assumeYes, onProgress, rollbackSnapshot: rollbackSnapshot?.id });
+    const execution = await executeRepairs(plan, { assumeYes, onProgress, rollbackSnapshot: rollbackSnapshot?.id, silent });
 
     // Stage 5: Verify
-    const verification = await verifyRepairs({ runBenchmark: !skipBenchmark });
+    const verification = await verifyRepairs({ runBenchmark: !skipBenchmark, silent });
 
     // Post-repair benchmark
     let benchmarkAfter = null;
     if (!skipBenchmark) {
         try {
             const { runBenchmark } = await import("./benchmark.js");
-            logger.info("Running post-repair benchmark...");
-            benchmarkAfter = await runBenchmark({ profile: "quick" });
+            log.info("Running post-repair benchmark...");
+            benchmarkAfter = await runBenchmark({ profile: "quick", silent });
             if (benchmarkBefore && benchmarkAfter) {
                 const delta = benchmarkAfter.overallScore - benchmarkBefore.overallScore;
                 const sign = delta > 0 ? "+" : "";
-                logger.section("Benchmark Comparison");
-                logger.info(`Before: ${benchmarkBefore.overallScore}  After: ${benchmarkAfter.overallScore}  (${sign}${delta})`);
+                log.section("Benchmark Comparison");
+                log.info(`Before: ${benchmarkBefore.overallScore}  After: ${benchmarkAfter.overallScore}  (${sign}${delta})`);
             }
         } catch {
             // Non-critical
@@ -2090,8 +2111,8 @@ export async function runFullRepair({ assumeYes = false, skipBenchmark = true, o
 
     // Phase 12: Compute repair quality score
     const qualityScore = computeQualityScore(execution, verification);
-    logger.section("Repair Quality Score");
-    logger.info(`Score: ${qualityScore.score}/100 (${qualityScore.grade}) - ${qualityScore.verdict}`);
+    log.section("Repair Quality Score");
+    log.info(`Score: ${qualityScore.score}/100 (${qualityScore.grade}) - ${qualityScore.verdict}`);
 
     const durationMs = Date.now() - startTime;
     const platform = getPlatform();
@@ -2131,12 +2152,12 @@ export async function runFullRepair({ assumeYes = false, skipBenchmark = true, o
     // Save to history
     saveRepairRecord(record);
 
-    logger.section("Repair Complete");
-    logger.success(`ID: ${id}`);
-    logger.info(`Fixed: ${execution.fixed}, Failed: ${execution.failed}, Skipped: ${execution.skipped}`);
-    logger.info(`Quality: ${qualityScore.score}/100 (${qualityScore.grade})`);
+    log.section("Repair Complete");
+    log.success(`ID: ${id}`);
+    log.info(`Fixed: ${execution.fixed}, Failed: ${execution.failed}, Skipped: ${execution.skipped}`);
+    log.info(`Quality: ${qualityScore.score}/100 (${qualityScore.grade})`);
     if (rollbackSnapshot) {
-        logger.info(`Rollback snapshot: ${rollbackSnapshot.id}`);
+        log.info(`Rollback snapshot: ${rollbackSnapshot.id}`);
     }
 
     return record;
@@ -2146,7 +2167,9 @@ export async function runFullRepair({ assumeYes = false, skipBenchmark = true, o
 // Benchmarks each stage of the repair pipeline to identify bottlenecks.
 // Returns structured timing data for analysis.
 
-export async function benchmarkRepairEngine({ iterations = 3 } = {}) {
+export async function benchmarkRepairEngine({ iterations = 3, silent = false } = {}) {
+    const log = silent ? { section() {}, info() {} } : logger;
+    const print = silent ? () => {} : (...args) => console.log(...args);
     const results = {
         scan: [],
         plan: [],
@@ -2155,8 +2178,8 @@ export async function benchmarkRepairEngine({ iterations = 3 } = {}) {
         totalPerRun: []
     };
 
-    logger.section("Repair Engine Performance Audit");
-    logger.info(`Running ${iterations} iteration(s)...\n`);
+    log.section("Repair Engine Performance Audit");
+    log.info(`Running ${iterations} iteration(s)...\n`);
 
     for (let iter = 0; iter < iterations; iter++) {
         const runStart = Date.now();
@@ -2168,7 +2191,7 @@ export async function benchmarkRepairEngine({ iterations = 3 } = {}) {
 
         // Benchmark: Scan
         const scanStart = Date.now();
-        const issues = await scanIssues();
+        const issues = await scanIssues({ silent: true });
         const scanMs = Date.now() - scanStart;
         results.scan.push(scanMs);
 
@@ -2185,7 +2208,7 @@ export async function benchmarkRepairEngine({ iterations = 3 } = {}) {
 
         results.totalPerRun.push(Date.now() - runStart);
 
-        logger.info(`  Iteration ${iter + 1}: scan=${scanMs}ms, plan=${planMs}ms, total=${Date.now() - runStart}ms, issues=${issues.length}`);
+        log.info(`  Iteration ${iter + 1}: scan=${scanMs}ms, plan=${planMs}ms, total=${Date.now() - runStart}ms, issues=${issues.length}`);
     }
 
     // Compute averages
@@ -2203,15 +2226,15 @@ export async function benchmarkRepairEngine({ iterations = 3 } = {}) {
         rawResults: results
     };
 
-    logger.section("Performance Summary");
-    console.log(`  Stage           Avg      Min      Max`);
-    console.log(`  ${"-".repeat(45)}`);
-    console.log(`  Registry load   ${summary.registryLoad.avg.toString().padStart(6)}ms  ${summary.registryLoad.min.toString().padStart(6)}ms  ${summary.registryLoad.max.toString().padStart(6)}ms`);
-    console.log(`  Scan            ${summary.scan.avg.toString().padStart(6)}ms  ${summary.scan.min.toString().padStart(6)}ms  ${summary.scan.max.toString().padStart(6)}ms`);
-    console.log(`  Plan            ${summary.plan.avg.toString().padStart(6)}ms  ${summary.plan.min.toString().padStart(6)}ms  ${summary.plan.max.toString().padStart(6)}ms`);
-    console.log(`  History load    ${summary.historyLoad.avg.toString().padStart(6)}ms  ${summary.historyLoad.min.toString().padStart(6)}ms  ${summary.historyLoad.max.toString().padStart(6)}ms`);
-    console.log(`  ${"-".repeat(45)}`);
-    console.log(`  Total per run   ${summary.totalPerRun.avg.toString().padStart(6)}ms  ${summary.totalPerRun.min.toString().padStart(6)}ms  ${summary.totalPerRun.max.toString().padStart(6)}ms`);
+    log.section("Performance Summary");
+    print(`  Stage           Avg      Min      Max`);
+    print(`  ${"-".repeat(45)}`);
+    print(`  Registry load   ${summary.registryLoad.avg.toString().padStart(6)}ms  ${summary.registryLoad.min.toString().padStart(6)}ms  ${summary.registryLoad.max.toString().padStart(6)}ms`);
+    print(`  Scan            ${summary.scan.avg.toString().padStart(6)}ms  ${summary.scan.min.toString().padStart(6)}ms  ${summary.scan.max.toString().padStart(6)}ms`);
+    print(`  Plan            ${summary.plan.avg.toString().padStart(6)}ms  ${summary.plan.min.toString().padStart(6)}ms  ${summary.plan.max.toString().padStart(6)}ms`);
+    print(`  History load    ${summary.historyLoad.avg.toString().padStart(6)}ms  ${summary.historyLoad.min.toString().padStart(6)}ms  ${summary.historyLoad.max.toString().padStart(6)}ms`);
+    print(`  ${"-".repeat(45)}`);
+    print(`  Total per run   ${summary.totalPerRun.avg.toString().padStart(6)}ms  ${summary.totalPerRun.min.toString().padStart(6)}ms  ${summary.totalPerRun.max.toString().padStart(6)}ms`);
 
     // Identify bottleneck
     const stages = [
@@ -2221,24 +2244,24 @@ export async function benchmarkRepairEngine({ iterations = 3 } = {}) {
         { name: "History load", ms: summary.historyLoad.avg }
     ];
     stages.sort((a, b) => b.ms - a.ms);
-    logger.info(`\n  Bottleneck: ${stages[0].name} (${stages[0].avg}ms avg)`);
+    log.info(`\n  Bottleneck: ${stages[0].name} (${stages[0].ms}ms avg)`);
 
     // Recommendations
-    logger.info("\n  Recommendations:");
+    log.info("\n  Recommendations:");
     if (summary.scan.avg > 5000) {
-        logger.info("    • Scan is slow (>5s) — consider parallelizing scanners with Promise.allSettled");
+        log.info("    • Scan is slow (>5s) — consider parallelizing scanners with Promise.allSettled");
     }
     if (summary.historyLoad.avg > 100) {
-        logger.info("    • History loading is slow — consider adding an index file for large histories");
+        log.info("    • History loading is slow — consider adding an index file for large histories");
     }
     if (summary.registryLoad.avg > 50) {
-        logger.info("    • Registry loading is slow — consider caching package list in memory");
+        log.info("    • Registry loading is slow — consider caching package list in memory");
     }
     if (summary.plan.avg > 100) {
-        logger.info("    • Plan generation is slow — review dependency graph traversal");
+        log.info("    • Plan generation is slow — review dependency graph traversal");
     }
     if (summary.totalPerRun.avg < 2000) {
-        logger.info("    • Overall performance is good (<2s per run)");
+        log.info("    • Overall performance is good (<2s per run)");
     }
 
     return summary;

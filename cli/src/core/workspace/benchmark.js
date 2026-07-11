@@ -6,7 +6,7 @@
 import { createWorkspace, deleteWorkspace, getWorkspace, saveWorkspace, workspaceExists } from "./store.js";
 import { switchToWorkspace, deactivateWorkspace, rollbackToSnapshot } from "./switcher.js";
 import { verifyWorkspace } from "./health.js";
-import { createSnapshot, listSnapshots, restoreSnapshot } from "./snapshot.js";
+import { createSnapshot, listSnapshots, restoreSnapshot, deleteSnapshot } from "./snapshot.js";
 import { exportWorkspaceBundle, importWorkspaceBundle } from "./bundle.js";
 import { computeWorkspaceHealth } from "./verification.js";
 import { getWorkspaceMetadata } from "./metadata.js";
@@ -15,16 +15,36 @@ import path from "node:path";
 import { existsSync, rmSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 
+// Read-only-by-default: only operations confirmed to never touch the
+// live machine (no git/ssh/docker/kubernetes/cloud-CLI identity change,
+// no persistent file writes). "switch"/"restore" re-apply this
+// workspace's live state for real (git config, ~/.ssh/config, docker/k8s
+// context, cloud CLI profile) - `devforgekit workspace benchmark <name>`
+// used to run these by default, meaning a plain "how fast is this"
+// benchmark would silently switch your real machine's active identity to
+// whatever workspace you benchmarked. "snapshot"/"bundleExport"/
+// "bundleImport" write real files too (snapshots, tar.gz bundles, and
+// bundleImport briefly creates+deletes an extra workspace) - lower
+// severity than switch/restore but still a write a "benchmark" command
+// shouldn't do unless asked. All five are still available, just opt-in
+// via --ops.
+const SAFE_OPERATIONS = ["metadata", "health", "verify", "diff"];
+const MUTATING_OPERATIONS = ["snapshot", "switch", "restore", "bundleExport", "bundleImport"];
+export const ALL_BENCHMARK_OPERATIONS = [...SAFE_OPERATIONS, ...MUTATING_OPERATIONS];
+
 // benchmarkWorkspace(name, { operations, runs }) -> { results: [{ operation,
 // durationMs, status, error? }], summary }
 //
 // Runs each requested operation `runs` times and reports the average
-// duration. Operations list defaults to all core operations. The
+// duration. `operations` defaults to SAFE_OPERATIONS only (see above) -
+// pass an explicit list (including any of MUTATING_OPERATIONS) to opt
+// into the ones that write files or change live machine state. The
 // workspace must already exist — this module never creates or destroys
-// workspaces itself (it only creates temporary bundles in the OS temp
-// dir for the export/import benchmarks).
+// the workspace being benchmarked itself (it only creates temporary
+// bundles/snapshots for the operations that need them, cleaned up
+// afterward).
 export async function benchmarkWorkspace(name, {
-    operations = ["metadata", "health", "verify", "snapshot", "diff", "switch", "restore", "bundleExport", "bundleImport"],
+    operations = SAFE_OPERATIONS,
     runs = 1,
     onProgress,
 } = {}) {
@@ -102,12 +122,13 @@ export async function benchmarkWorkspace(name, {
             totalMs += elapsedNs / 1e6;
         }
 
-        // Cleanup snapshots created during benchmarking
+        // Cleanup snapshots created during benchmarking - previously a
+        // no-op (this loop body was empty), so every "snapshot"/"restore"
+        // benchmark run left real, permanent snapshot files behind.
         for (const snapId of snapshotsCreated) {
             try {
-                // Snapshots are cleaned up by the snapshot module's own
-                // list — we just leave them, they're harmless
-            } catch { /* ignore */ }
+                deleteSnapshot(name, snapId);
+            } catch { /* already gone or never persisted - fine either way */ }
         }
 
         const avgMs = runs > 0 ? totalMs / runs : 0;

@@ -30,6 +30,7 @@ import { DevForgeError } from "./errors.js";
 import { scanCompatibility, currentPlatform, currentArchitecture } from "./compatibility/engine.js";
 import { loadPackages } from "./registry.js";
 import { validate } from "./installer.js";
+import { mapWithConcurrency } from "./concurrency.js";
 import { scoreResults } from "./health.js";
 
 // ─── Constants ────────────────────────────────────────────────────────
@@ -750,7 +751,8 @@ async function gatherMachineInfo() {
 
 // ─── Run Benchmark ────────────────────────────────────────────────────
 
-export async function runBenchmark({ profile = "quick", onProgress, signal } = {}) {
+export async function runBenchmark({ profile = "quick", onProgress, signal, silent = false } = {}) {
+    const log = silent ? { section() {}, info() {}, success() {}, warn() {} } : logger;
     const categories = PROFILES[profile];
     if (!categories) {
         throw new DevForgeError(`Unknown benchmark profile '${profile}'. Available: ${Object.keys(PROFILES).join(", ")}`);
@@ -760,8 +762,8 @@ export async function runBenchmark({ profile = "quick", onProgress, signal } = {
     const createdAt = new Date().toISOString();
     const id = makeBenchmarkId(createdAt);
 
-    logger.section(`Benchmark: ${profile.toUpperCase()}`);
-    logger.info(`Running ${categories.length} category benchmarks...\n`);
+    log.section(`Benchmark: ${profile.toUpperCase()}`);
+    log.info(`Running ${categories.length} category benchmarks...\n`);
 
     const machine = await gatherMachineInfo();
     const categoryResults = {};
@@ -774,7 +776,7 @@ export async function runBenchmark({ profile = "quick", onProgress, signal } = {
         if (!bench) continue;
 
         if (signal?.aborted) {
-            logger.warn("Benchmark cancelled");
+            log.warn("Benchmark cancelled");
             break;
         }
 
@@ -787,7 +789,7 @@ export async function runBenchmark({ profile = "quick", onProgress, signal } = {
             if (measurements.skipped) {
                 skipped.push({ category: catKey, reason: measurements.skipped });
                 if (onProgress) onProgress({ category: catKey, label: bench.label, index: i, total: categories.length, status: "skipped" });
-                logger.warn(`  ${bench.label}: skipped (${measurements.skipped})`);
+                log.warn(`  ${bench.label}: skipped (${measurements.skipped})`);
                 continue;
             }
 
@@ -796,16 +798,16 @@ export async function runBenchmark({ profile = "quick", onProgress, signal } = {
             if (score != null) {
                 categoryScores[catKey] = score;
                 const grade = gradeForScore(score);
-                logger.success(`  ${bench.label}: ${score}/100 (${grade})`);
+                log.success(`  ${bench.label}: ${score}/100 (${grade})`);
             } else {
-                logger.warn(`  ${bench.label}: no valid measurements`);
+                log.warn(`  ${bench.label}: no valid measurements`);
             }
 
             if (onProgress) onProgress({ category: catKey, label: bench.label, index: i, total: categories.length, status: "done", score });
         } catch (err) {
             skipped.push({ category: catKey, reason: err.message });
             if (onProgress) onProgress({ category: catKey, label: bench.label, index: i, total: categories.length, status: "error", error: err.message });
-            logger.warn(`  ${bench.label}: error - ${err.message}`);
+            log.warn(`  ${bench.label}: error - ${err.message}`);
         }
     }
 
@@ -813,11 +815,11 @@ export async function runBenchmark({ profile = "quick", onProgress, signal } = {
     const overallGrade = gradeForScore(overallScore);
     const durationMs = Date.now() - startTime;
 
-    logger.section("Benchmark Complete");
-    logger.success(`Overall Score: ${overallScore}/100 (${overallGrade})`);
-    logger.info(`Duration: ${(durationMs / 1000).toFixed(1)}s`);
+    log.section("Benchmark Complete");
+    log.success(`Overall Score: ${overallScore}/100 (${overallGrade})`);
+    log.info(`Duration: ${(durationMs / 1000).toFixed(1)}s`);
     if (skipped.length > 0) {
-        logger.warn(`Skipped: ${skipped.length} category(ies)`);
+        log.warn(`Skipped: ${skipped.length} category(ies)`);
     }
 
     // Find slowest and fastest categories
@@ -830,18 +832,21 @@ export async function runBenchmark({ profile = "quick", onProgress, signal } = {
         fastest = { category: scoredEntries[scoredEntries.length - 1][0], score: scoredEntries[scoredEntries.length - 1][1] };
     }
 
-    // Compatibility check
+    // Compatibility check. Bounded concurrency (same worker pool
+    // doctor.js/componentManager.js/packageIntel.js use) instead of a
+    // plain sequential loop - validating all 261 packages one at a time
+    // here was the same class of ~50-80s bottleneck fixed elsewhere.
     let compatibilityIssues = [];
     try {
-        const installed = [];
-        for (const pkg of loadPackages()) {
-            if (!pkg.validate) continue;
+        const validated = await mapWithConcurrency(loadPackages(), 8, async (pkg) => {
+            if (!pkg.validate) return null;
             try {
-                if ((await validate(pkg)) === 0) installed.push(pkg.name);
+                return (await validate(pkg)) === 0 ? pkg.name : null;
             } catch {
-                // Not installed
+                return null;
             }
-        }
+        });
+        const installed = validated.filter(Boolean);
         const compatResult = await scanCompatibility(installed);
         compatibilityIssues = (compatResult.issues || []).filter((i) => i.severity === "FAIL" || i.severity === "WARNING");
     } catch {

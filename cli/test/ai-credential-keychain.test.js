@@ -25,6 +25,7 @@ test("set() passes the API key as a literal argv element, never interpolated int
     const calls = [];
     const backend = new KeychainBackend({
         execImpl: fakeExecImpl,
+        platform: "darwin",
         execFileImpl: (file, args) => {
             calls.push({ file, args });
             return "";
@@ -55,7 +56,7 @@ test("get()/remove()/exists() pass the provider id as a literal argv element", (
         calls.push({ file, args });
         return "stored-value\n";
     };
-    const backend = new KeychainBackend({ execImpl: fakeExecImpl, execFileImpl });
+    const backend = new KeychainBackend({ execImpl: fakeExecImpl, platform: "darwin", execFileImpl });
 
     const maliciousProvider = `openai" ; rm -rf ~ ; echo "`;
     backend.get(maliciousProvider);
@@ -79,6 +80,7 @@ test("set() never calls execImpl (the shell-interpreted path) - only execFileImp
             shellCalls++;
             return fakeExecImpl(...args);
         },
+        platform: "darwin",
         execFileImpl: () => ""
     });
     // detectKeychain() legitimately uses execImpl (no user data involved -
@@ -92,6 +94,7 @@ test("set() never calls execImpl (the shell-interpreted path) - only execFileImp
 test("set() throws KeychainUnavailableError (not a raw exec error) when the write fails", () => {
     const backend = new KeychainBackend({
         execImpl: fakeExecImpl,
+        platform: "darwin",
         execFileImpl: () => {
             throw new Error("keychain locked");
         }
@@ -106,10 +109,24 @@ test("detectKeychain probes use the injected execImpl, not the real security bin
             probes.push(cmd);
             return "";
         },
+        platform: "darwin",
         execFileImpl: () => ""
     });
-    assert.equal(backend._available, process.platform === "darwin");
-    if (process.platform === "darwin") {
-        assert.equal(probes.length, 3);
-    }
+    assert.equal(backend._available, true);
+    assert.equal(probes.length, 3);
+});
+
+test("on a non-macOS platform, detectKeychain reports unavailable without ever calling execImpl", () => {
+    let calls = 0;
+    const backend = new KeychainBackend({
+        execImpl: () => {
+            calls++;
+            return "";
+        },
+        platform: "linux",
+        execFileImpl: () => ""
+    });
+    assert.equal(backend._available, false);
+    assert.equal(backend._reason, "not macOS");
+    assert.equal(calls, 0);
 });

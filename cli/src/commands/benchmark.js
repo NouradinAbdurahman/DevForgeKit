@@ -41,7 +41,7 @@ export function registerBenchmarkCommand(program) {
         .option("--json", "output result as JSON")
         .action(withErrorHandling(async function () {
             const opts = this.opts();
-            const result = await runBenchmark({ profile: "quick" });
+            const result = await runBenchmark({ profile: "quick", silent: Boolean(opts.json) });
             if (opts.save) saveResult(result);
             if (opts.json) {
                 console.log(JSON.stringify(result, null, 2));
@@ -56,7 +56,7 @@ export function registerBenchmarkCommand(program) {
         .option("--json", "output result as JSON")
         .action(withErrorHandling(async function () {
             const opts = this.opts();
-            const result = await runBenchmark({ profile: "full" });
+            const result = await runBenchmark({ profile: "full", silent: Boolean(opts.json) });
             if (opts.save) saveResult(result);
             if (opts.json) {
                 console.log(JSON.stringify(result, null, 2));
@@ -71,7 +71,7 @@ export function registerBenchmarkCommand(program) {
         .option("--json", "output result as JSON")
         .action(withErrorHandling(async function () {
             const opts = this.opts();
-            const result = await runBenchmark({ profile: "standard" });
+            const result = await runBenchmark({ profile: "standard", silent: Boolean(opts.json) });
             if (opts.save) saveResult(result);
             if (opts.json) {
                 console.log(JSON.stringify(result, null, 2));

@@ -15,7 +15,7 @@ import { repoRoot } from "../core/paths.js";
 import { table, section, healthBar } from "../lib/ui.js";
 import { logger } from "../core/logger.js";
 import { withErrorHandling } from "../core/errors.js";
-import { verifyAllPackages, registryDoctor } from "../core/installAudit.js";
+import { verifyAllPackages, registryDoctor, INSTALL_STATUS } from "../core/installAudit.js";
 import { formatRegistry } from "../core/registryFormat.js";
 import { lintRegistry } from "../core/registryLint.js";
 import chalk from "chalk";
@@ -615,20 +615,29 @@ export function registerRegistryCommand(program) {
 
     registry
         .command("verify")
-        .description("Validate every registry package: attempt install or validate, track verification status")
+        .description("Check every registry package's install status. Read-only by default (validates what's already installed) - pass --install to actually attempt installing missing packages.")
         .option("--json", "emit results as JSON")
-        .option("--timeout <ms>", "per-package install timeout in milliseconds", "120000")
+        .option("--install", "attempt to actually install packages that aren't already present (mutates the machine - default is read-only)")
+        .option("--timeout <ms>", "per-package install timeout in milliseconds, only relevant with --install", "120000")
         .action(withErrorHandling(async function () {
             const opts = this.opts();
             const packages = loadPackages();
             const timeoutMs = parseInt(opts.timeout, 10) || 120000;
+            const attemptInstall = Boolean(opts.install);
 
-            logger.section(`Verifying ${packages.length} registry packages...`);
+            if (!opts.json) {
+                logger.section(`Verifying ${packages.length} registry packages...${attemptInstall ? " (--install: will attempt real installs for missing packages)" : ""}`);
+            }
 
             const { results, summary } = await verifyAllPackages({
                 packages,
                 timeoutMs,
-                onProgress: (r) => {
+                attemptInstall,
+                onProgress: opts.json ? undefined : (r) => {
+                    if (r.status === INSTALL_STATUS.NOT_INSTALLED) {
+                        logger.info(`○ ${r.name} - not installed`);
+                        return;
+                    }
                     const icon = r.success ? "✓" : "✗";
                     const status = r.success ? "verified" : r.status;
                     if (r.success) {
@@ -654,6 +663,7 @@ export function registerRegistryCommand(program) {
                 `✅ Verified:              ${summary.verified}`,
                 `🟢 Installed:             ${summary.installed}`,
                 `🔄 Update Available:      ${summary.updateAvailable}`,
+                `○ Not Installed:          ${summary.notInstalled}${attemptInstall ? "" : " (pass --install to attempt real installs)"}`,
                 `⚠ Manual Installation:    ${summary.manualInstallation}`,
                 `🔐 Auth Required:         ${summary.authenticationRequired}`,
                 `📄 License Required:      ${summary.licenseRequired}`,
@@ -673,6 +683,8 @@ export function registerRegistryCommand(program) {
             const problemCount = summary.brokenRegistryMetadata + summary.brokenDownload + summary.removedByVendor + summary.unsupportedPlatform + summary.unsupportedArchitecture;
             if (problemCount > 0) {
                 logger.warn(`${problemCount} packages need attention.`);
+            } else if (!attemptInstall && summary.notInstalled > 0) {
+                logger.info(`${summary.notInstalled} package(s) not installed - run with --install to attempt real installs (mutates the machine).`);
             } else if (summary.verified + summary.installed === summary.total) {
                 logger.success("All packages verified!");
             }

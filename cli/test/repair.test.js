@@ -406,6 +406,55 @@ test("scanIssues calls onProgress callback", async () => {
     }
 });
 
+// Regression test for a real bug: `repair scan --json` (and `plan`/
+// `explain-issues`/`run --json`) used to print scanIssues()'s progress
+// banner (logger.section/info/success - all console.log, i.e. stdout)
+// unconditionally, corrupting the JSON payload the same command printed
+// right after it - any script piping the output through `jq` broke
+// immediately. `silent: true` must suppress every line scanIssues()
+// would otherwise print while still returning the full, real issue list.
+test("scanIssues({ silent: true }) prints nothing to stdout/stderr but still returns real issues", async () => {
+    const originalHome = process.env.HOME;
+    const tempHome = mkdtempSync(path.join(tmpdir(), "devforgekit-repair-silent-"));
+    process.env.HOME = tempHome;
+
+    const originalLog = console.log;
+    const originalError = console.error;
+    const logged = [];
+    console.log = (...args) => logged.push(args.join(" "));
+    console.error = (...args) => logged.push(args.join(" "));
+
+    try {
+        const issues = await scanIssues({ silent: true });
+        assert.ok(Array.isArray(issues));
+        assert.deepEqual(logged, [], `expected zero console output, got: ${JSON.stringify(logged)}`);
+    } finally {
+        console.log = originalLog;
+        console.error = originalError;
+        process.env.HOME = originalHome;
+        rmSync(tempHome, { recursive: true, force: true });
+    }
+});
+
+test("scanIssues() without silent still prints its usual progress banner (proves silent isn't a no-op)", async () => {
+    const originalHome = process.env.HOME;
+    const tempHome = mkdtempSync(path.join(tmpdir(), "devforgekit-repair-not-silent-"));
+    process.env.HOME = tempHome;
+
+    const originalLog = console.log;
+    const logged = [];
+    console.log = (...args) => logged.push(args.join(" "));
+
+    try {
+        await scanIssues();
+        assert.ok(logged.some((line) => line.includes("Repair Engine: Scan")));
+    } finally {
+        console.log = originalLog;
+        process.env.HOME = originalHome;
+        rmSync(tempHome, { recursive: true, force: true });
+    }
+});
+
 // ─── Integration: scanCliInstallIssues ─────────────────────────────────
 // (pre-v3.0.0 "Installation Experience Excellence" - checks the global
 // symlink, cli/node_modules, and ~/.config/devforgekit/install-state.json)

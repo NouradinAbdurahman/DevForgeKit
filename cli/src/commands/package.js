@@ -38,7 +38,7 @@ export function registerPackageCommand(program) {
         .option("--save", "save analysis to history")
         .action(withErrorHandling(async function () {
             const opts = this.opts();
-            const analysis = await analyzePackages({ useCache: opts.cache });
+            const analysis = await analyzePackages({ useCache: opts.cache, silent: Boolean(opts.json) });
 
             if (opts.save) {
                 const filePath = saveAnalysis(analysis);
@@ -66,7 +66,7 @@ export function registerPackageCommand(program) {
         .option("--json", "output as JSON")
         .action(withErrorHandling(async function (name) {
             const opts = this.opts();
-            const analysis = await analyzePackages({ useCache: true });
+            const analysis = await analyzePackages({ useCache: true, silent: Boolean(opts.json) });
             const info = packageInfo(name, { analysis });
 
             if (opts.json) {
@@ -175,7 +175,7 @@ export function registerPackageCommand(program) {
         .option("--json", "output as JSON")
         .action(withErrorHandling(async function () {
             const opts = this.opts();
-            const analysis = await analyzePackages({ useCache: true });
+            const analysis = await analyzePackages({ useCache: true, silent: Boolean(opts.json) });
 
             if (opts.json) {
                 console.log(JSON.stringify(analysis.orphans, null, 2));
@@ -204,7 +204,7 @@ export function registerPackageCommand(program) {
         .option("--json", "output as JSON")
         .action(withErrorHandling(async function () {
             const opts = this.opts();
-            const analysis = await analyzePackages({ useCache: true });
+            const analysis = await analyzePackages({ useCache: true, silent: Boolean(opts.json) });
 
             if (opts.json) {
                 console.log(JSON.stringify(analysis.duplicates, null, 2));
@@ -232,7 +232,7 @@ export function registerPackageCommand(program) {
         .option("--json", "output as JSON")
         .action(withErrorHandling(async function () {
             const opts = this.opts();
-            const analysis = await analyzePackages({ useCache: true });
+            const analysis = await analyzePackages({ useCache: true, silent: Boolean(opts.json) });
 
             if (opts.json) {
                 console.log(JSON.stringify(analysis.orphans, null, 2));
@@ -260,7 +260,7 @@ export function registerPackageCommand(program) {
         .option("--json", "output as JSON")
         .action(withErrorHandling(async function () {
             const opts = this.opts();
-            const analysis = await analyzePackages({ useCache: true });
+            const analysis = await analyzePackages({ useCache: true, silent: Boolean(opts.json) });
 
             if (opts.json) {
                 console.log(JSON.stringify(analysis.outdated, null, 2));
@@ -290,7 +290,7 @@ export function registerPackageCommand(program) {
         .option("--endpoint <url>", "custom API endpoint")
         .action(withErrorHandling(async function () {
             const opts = this.opts();
-            const analysis = await analyzePackages({ useCache: true });
+            const analysis = await analyzePackages({ useCache: true, silent: Boolean(opts.json) });
 
             const result = await recommend(analysis, {
                 provider: opts.provider,
@@ -312,7 +312,7 @@ export function registerPackageCommand(program) {
         .option("--json", "output as JSON")
         .action(withErrorHandling(async function (name) {
             const opts = this.opts();
-            const analysis = await analyzePackages({ useCache: true });
+            const analysis = await analyzePackages({ useCache: true, silent: Boolean(opts.json) });
             const impact = await packageImpact(name, { analysis });
 
             if (opts.json) {
@@ -360,7 +360,7 @@ export function registerPackageCommand(program) {
         .option("--json", "output as JSON")
         .action(withErrorHandling(async function (query) {
             const opts = this.opts();
-            const analysis = await analyzePackages({ useCache: true });
+            const analysis = await analyzePackages({ useCache: true, silent: Boolean(opts.json) });
             const results = searchPackages(analysis, query, { filter: opts.filter });
 
             if (opts.json) {
@@ -457,7 +457,7 @@ export function registerPackageCommand(program) {
         .option("--save", "save analysis first before exporting")
         .action(withErrorHandling(async function () {
             const opts = this.opts();
-            const analysis = await analyzePackages({ useCache: true });
+            const analysis = await analyzePackages({ useCache: true, silent: Boolean(opts.json) });
 
             if (opts.save) {
                 saveAnalysis(analysis);

@@ -15,24 +15,39 @@ import { PlatformNotSupportedError, assertSafePackageId } from "./errors.js";
 const APT_PATH = "/usr/bin/apt";
 const DNF_PATH = "/usr/bin/dnf";
 const PACMAN_PATH = "/usr/bin/pacman";
+const OS_RELEASE_PATH = "/etc/os-release";
+const PROC_VERSION_PATH = "/proc/version";
 
-function detectPackageManager() {
-    if (existsSync(APT_PATH)) return "apt";
-    if (existsSync(DNF_PATH)) return "dnf";
-    if (existsSync(PACMAN_PATH)) return "pacman";
+function detectPackageManager({ aptPath = APT_PATH, dnfPath = DNF_PATH, pacmanPath = PACMAN_PATH } = {}) {
+    if (existsSync(aptPath)) return "apt";
+    if (existsSync(dnfPath)) return "dnf";
+    if (existsSync(pacmanPath)) return "pacman";
     return null;
 }
 
-function isWSL() {
-    try {
-        const content = readFileSync("/proc/version", "utf8");
-        return /microsoft/i.test(content);
-    } catch {
-        return false;
-    }
-}
-
 export class LinuxPlatform extends Platform {
+    // Every detection path is injectable (aptPath/dnfPath/pacmanPath/
+    // osReleasePath/procVersionPath), matching the fetchImpl-style DI
+    // convention already used for AI provider clients and the Keychain
+    // credential backend - lets cli/test/platform.test.js deterministically
+    // exercise "no package manager detected"/"no /etc/os-release" without
+    // depending on whether the real host running the test happens to be a
+    // real Linux machine that does have apt/os-release (the previous,
+    // unparameterized version of these tests only ever passed by the
+    // accident of running on macOS in local development; the first real
+    // Linux CI run - see cli.yml's `test` job - exposed that every one of
+    // these "degrades gracefully" paths had never actually been verified).
+    constructor({ aptPath = APT_PATH, dnfPath = DNF_PATH, pacmanPath = PACMAN_PATH, osReleasePath = OS_RELEASE_PATH, procVersionPath = PROC_VERSION_PATH } = {}) {
+        super();
+        this._pmPaths = { aptPath, dnfPath, pacmanPath };
+        this._osReleasePath = osReleasePath;
+        this._procVersionPath = procVersionPath;
+    }
+
+    _detectPackageManager() {
+        return detectPackageManager(this._pmPaths);
+    }
+
     get id() {
         return "linux";
     }
@@ -54,11 +69,11 @@ export class LinuxPlatform extends Platform {
     }
 
     packageManagerId() {
-        return detectPackageManager();
+        return this._detectPackageManager();
     }
 
     packageManagerCacheDir() {
-        const pm = detectPackageManager();
+        const pm = this._detectPackageManager();
         if (pm === "apt") return "/var/cache/apt/archives";
         if (pm === "dnf") return "/var/cache/dnf";
         if (pm === "pacman") return "/var/cache/pacman/pkg";
@@ -69,10 +84,9 @@ export class LinuxPlatform extends Platform {
     // freedesktop.org source every major distro ships), e.g.
     // "Ubuntu 24.04.1 LTS". Returns null if the file is missing/unreadable.
     async osVersion() {
-        const osReleasePath = "/etc/os-release";
-        if (!existsSync(osReleasePath)) return null;
+        if (!existsSync(this._osReleasePath)) return null;
         try {
-            const content = readFileSync(osReleasePath, "utf8");
+            const content = readFileSync(this._osReleasePath, "utf8");
             const match = /^PRETTY_NAME="?([^"\n]+)"?$/m.exec(content);
             return match ? match[1] : null;
         } catch {
@@ -83,7 +97,12 @@ export class LinuxPlatform extends Platform {
     // isWSL() - true when running inside Windows Subsystem for Linux.
     // Detected via /proc/version containing "microsoft".
     get wsl() {
-        return isWSL();
+        try {
+            const content = readFileSync(this._procVersionPath, "utf8");
+            return /microsoft/i.test(content);
+        } catch {
+            return false;
+        }
     }
 
     installCommand(step, action) {
@@ -109,7 +128,7 @@ export class LinuxPlatform extends Platform {
     }
 
     async packagePrefix(id) {
-        const pm = detectPackageManager();
+        const pm = this._detectPackageManager();
         if (!pm) return null;
         try {
             if (pm === "apt") {
@@ -131,7 +150,7 @@ export class LinuxPlatform extends Platform {
     }
 
     async outdatedPackages() {
-        const pm = detectPackageManager();
+        const pm = this._detectPackageManager();
         if (!pm) return [];
         try {
             if (pm === "apt") {
@@ -165,7 +184,7 @@ export class LinuxPlatform extends Platform {
 
     upgradeCommand(name) {
         assertSafePackageId(name, "package name");
-        const pm = detectPackageManager();
+        const pm = this._detectPackageManager();
         if (pm === "apt") return `sudo apt update && sudo apt upgrade -y ${name}`;
         if (pm === "dnf") return `sudo dnf upgrade -y ${name}`;
         if (pm === "pacman") return `sudo pacman -Syu --noconfirm ${name}`;
