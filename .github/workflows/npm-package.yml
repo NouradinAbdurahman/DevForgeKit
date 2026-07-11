@@ -1,0 +1,152 @@
+name: npm Package Validation
+
+# Verifies the npm distribution actually works, not just that `npm pack`
+# doesn't error: packs the real tarball, checks its size/contents/
+# executable permissions, installs it globally into a scratch prefix
+# (never the runner's real global npm), and runs real commands against
+# the installed copy - the exact failure modes that pure static checks
+# miss (a file silently missing from `files`, a lost chmod +x bit, a
+# broken bin mapping). Matches e2e.yml's real-subprocess-not-mocked
+# philosophy. Windows is out of scope here - package.json's `os` field
+# restricts this package to darwin/linux (the root `devforgekit`
+# dispatcher is bash; see CLAUDE.md's Layer 1 scoping).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "package.json"
+      - "scripts/npm-postinstall.sh"
+      - "devforgekit"
+      - "bootstrap.sh"
+      - "cli/package.json"
+      - "cli/bin/**"
+      - "cli/src/version.js"
+      - ".github/workflows/npm-package.yml"
+  pull_request:
+    paths:
+      - "package.json"
+      - "scripts/npm-postinstall.sh"
+      - "devforgekit"
+      - "bootstrap.sh"
+      - "cli/package.json"
+      - "cli/bin/**"
+      - "cli/src/version.js"
+      - ".github/workflows/npm-package.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pack-and-verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "lts/*"
+
+      - name: npm pack (dry run) - must not error
+        run: npm pack --dry-run
+
+      - name: npm publish (dry run) - verifies package metadata and public access
+        run: npm publish --dry-run
+
+      - name: Pack the real tarball
+        run: npm pack
+
+      - name: Package size guard (fails if it silently grows past 5 MB packed)
+        shell: bash
+        run: |
+          size_bytes=$(wc -c < devforgekit-*.tgz | tr -d ' ')
+          size_kb=$((size_bytes / 1024))
+          echo "Packed size: ${size_kb} kB"
+          if [[ "$size_kb" -gt 5120 ]]; then
+            echo "::error::Package grew to ${size_kb} kB (limit 5120 kB) - check what's newly included in 'files'"
+            exit 1
+          fi
+
+      - name: Verify critical files are actually in the tarball
+        shell: bash
+        run: |
+          set -e
+          # Capture tar's listing once into a variable instead of piping
+          # into `grep -q` per file: `grep -q` exits as soon as it finds
+          # a match, which sends `tar` SIGPIPE on its still-open stdout -
+          # under `pipefail` (this shell's default here) the pipeline
+          # then reports tar's SIGPIPE exit code instead of grep's
+          # successful match, so a present file gets misreported as
+          # missing. Confirmed live: failed on ubuntu-latest, passed on
+          # macos-latest for the exact same tarball, purely from this
+          # platform-dependent SIGPIPE/pipefail race - not a real
+          # packaging difference.
+          file_list="$(tar -tzf devforgekit-*.tgz)"
+          missing=0
+          for f in package/VERSION package/CHANGELOG.md package/devforgekit package/bootstrap.sh package/scripts/npm-postinstall.sh package/cli/bin/devforgekit.js package/cli/package.json package/cli/package-lock.json package/.zshrc package/.gitconfig package/Brewfile package/mise.toml; do
+            if ! grep -qx "$f" <<< "$file_list"; then
+              echo "::error::$f is missing from the packed tarball"
+              missing=1
+            fi
+          done
+          exit $missing
+
+      - name: Verify executable permissions survive packing
+        shell: bash
+        run: |
+          set -e
+          for f in devforgekit bootstrap.sh scripts/npm-postinstall.sh; do
+            mode=$(tar -tvzf devforgekit-*.tgz "package/$f" | awk '{print $1}')
+            if [[ "$mode" != -rwx* ]]; then
+              echo "::error::package/$f is not executable in the tarball (mode: $mode)"
+              exit 1
+            fi
+          done
+
+      - name: Install the packed tarball into a scratch prefix (never the runner's real global npm)
+        shell: bash
+        run: |
+          set -e
+          mkdir -p "${RUNNER_TEMP}/npm-scratch-prefix"
+          npm install -g ./devforgekit-*.tgz --prefix "${RUNNER_TEMP}/npm-scratch-prefix"
+          echo "${RUNNER_TEMP}/npm-scratch-prefix/bin" >> "$GITHUB_PATH"
+
+      - name: Verify the installed binary actually works
+        shell: bash
+        run: |
+          set -e
+          export DEVFORGEKIT_NO_TUI=1
+          export HOME="${RUNNER_TEMP}/dfk-npm-home"
+          mkdir -p "$HOME"
+
+          echo "::group::devforgekit --version (must match VERSION, not fall back to 0.0.0)"
+          version_output="$(devforgekit --version)"
+          echo "reported: $version_output"
+          expected="$(cat VERSION)"
+          if [[ "$version_output" != "$expected" ]]; then
+            echo "::error::devforgekit --version reported '$version_output', expected '$expected' (a file is likely missing from 'files')"
+            exit 1
+          fi
+          echo "::endgroup::"
+
+          echo "::group::devforgekit --help"
+          devforgekit --help >/dev/null
+          echo "::endgroup::"
+
+          echo "::group::devforgekit doctor --json (proves the Node CLI, not just the bash fallback, is wired up)"
+          devforgekit doctor --skip-bash --skip-compatibility --json > /dev/null
+          echo "::endgroup::"
+
+          echo "::group::devforgekit new --list (proves the registry/templates shipped correctly)"
+          devforgekit new --list >/dev/null
+          echo "::endgroup::"
+
+      - name: Clean up the scratch npm prefix
+        if: always()
+        shell: bash
+        run: rm -rf "${RUNNER_TEMP}/npm-scratch-prefix" "${RUNNER_TEMP}/dfk-npm-home"

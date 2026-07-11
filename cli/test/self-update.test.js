@@ -11,7 +11,8 @@ import {
     restoreConfig,
     backupDir,
     extractChangelog,
-    CURRENT_CONFIG_VERSION
+    CURRENT_CONFIG_VERSION,
+    isNpmGlobalInstall
 } from "../src/core/self-update.js";
 
 // Point HOME at a scratch directory to isolate from the developer's real
@@ -27,6 +28,23 @@ function withTempHome(fn) {
         rmSync(tempHome, { recursive: true, force: true });
     }
 }
+
+// ─── npm vs git-clone install detection ────────────────────────────────
+//
+// Regression guard: self-update's git pull/reset flow only applies to a
+// git-clone install. Before this, an npm-installed copy (no .git
+// directory) failed preflight with a bare "Not a git repository" error
+// and no indication that `npm update -g devforgekit` was the actual fix.
+
+test("isNpmGlobalInstall detects a path containing a node_modules segment", () => {
+    assert.equal(isNpmGlobalInstall("/usr/local/lib/node_modules/devforgekit"), true);
+    assert.equal(isNpmGlobalInstall("/opt/homebrew/lib/node_modules/devforgekit"), true);
+});
+
+test("isNpmGlobalInstall returns false for a plain git-clone path", () => {
+    assert.equal(isNpmGlobalInstall("/Users/dev/Developer/DevForgeKit"), false);
+    assert.equal(isNpmGlobalInstall(process.cwd()), false);
+});
 
 // ─── Config migration tests ───────────────────────────────────────────
 

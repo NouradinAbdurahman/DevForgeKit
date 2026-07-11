@@ -103,6 +103,15 @@ export function restoreConfig(srcDir) {
     return { ok: true, details: configDir };
 }
 
+// isNpmGlobalInstall(root) -> true if `root` looks like an npm global
+// install location (contains a node_modules path segment - the same
+// signal npm's own package resolution relies on) rather than a git
+// clone. Takes an explicit root instead of always reading repoRoot()
+// internally so it's directly testable without faking the filesystem.
+export function isNpmGlobalInstall(root = repoRoot()) {
+    return root.includes(`${path.sep}node_modules${path.sep}`);
+}
+
 // ─── Git operations ───────────────────────────────────────────────────
 
 export async function currentCommit() {
@@ -245,7 +254,13 @@ export async function selfUpdate({ dryRun = false, skipPlugins = false, skipNpm 
         return result;
     }
 
-    // Step 1: Pre-flight - verify we're in a git repo
+    // Step 1: Pre-flight - verify we're in a git repo. This whole
+    // engine (git pull, git reset for rollback) only makes sense for a
+    // git-clone install; an npm-installed copy (repoRoot() living under
+    // a node_modules directory - the same test npm itself uses to
+    // detect a package's install location) has no .git directory at
+    // all, so degrade to a clear, actionable message instead of a bare
+    // "not a git repository" error that leaves an npm user guessing.
     logger.section("Self-Update: Pre-flight");
     try {
         state.oldCommit = await currentCommit();
@@ -253,6 +268,11 @@ export async function selfUpdate({ dryRun = false, skipPlugins = false, skipNpm 
         record("preflight", { ok: true });
     } catch (err) {
         logger.error(err.message);
+        if (isNpmGlobalInstall()) {
+            logger.info("This looks like an npm install (npm install -g devforgekit), not a git clone.");
+            logger.info("Run 'npm update -g devforgekit' instead - self-update's git-based flow only applies to git-clone installs.");
+            return { ok: false, steps, error: "npm install - use 'npm update -g devforgekit' instead", state };
+        }
         return { ok: false, steps, error: "preflight failed", state };
     }
 

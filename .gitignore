@@ -30,3 +30,8 @@ preferences/*.plist
 # DevForgeKit Core CLI (cli/) - installed by bootstrap.sh's
 # ensure_cli_dependencies, reproducible from cli/package-lock.json
 cli/node_modules/
+
+# Marker written by the `devforgekit` dispatcher's self_heal_cli_deps()
+# when a just-in-time `npm install` in cli/ fails, so it doesn't retry
+# on every command - machine-local, never meant to be committed
+cli/.npm-install-failed

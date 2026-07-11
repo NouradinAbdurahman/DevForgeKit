@@ -1,0 +1,69 @@
+{
+  "name": "devforgekit",
+  "version": "3.0.0",
+  "private": false,
+  "description": "The complete local-first development environment platform — provision, manage, diagnose, and maintain a professional developer workstation from one CLI.",
+  "homepage": "https://devforgekit.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NouradinAbdurahman/DevForgeKit.git"
+  },
+  "bugs": {
+    "url": "https://github.com/NouradinAbdurahman/DevForgeKit/issues"
+  },
+  "license": "MIT",
+  "author": "Nouradin Abdurahman",
+  "keywords": [
+    "developer-tools",
+    "development-environment",
+    "cli",
+    "tui",
+    "dotfiles",
+    "bootstrap",
+    "workstation-setup",
+    "environment-manager",
+    "project-generator",
+    "package-registry"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "os": [
+    "darwin",
+    "linux"
+  ],
+  "bin": {
+    "devforgekit": "./devforgekit"
+  },
+  "files": [
+    "cli/bin",
+    "cli/src",
+    "cli/package.json",
+    "cli/package-lock.json",
+    "scripts",
+    "registry",
+    "templates",
+    "plugins",
+    "profiles",
+    "docs",
+    "vscode",
+    "cursor",
+    "bootstrap.sh",
+    "devforgekit",
+    "Brewfile",
+    "mise.toml",
+    ".zshrc",
+    ".gitconfig",
+    ".gitignore_global",
+    "VERSION",
+    "CHANGELOG.md",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "postinstall": "scripts/npm-postinstall.sh"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

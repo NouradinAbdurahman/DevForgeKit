@@ -95,12 +95,40 @@ cli_available() {
     command -v node >/dev/null 2>&1 && [[ -d "$SCRIPT_DIR/cli/node_modules" ]]
 }
 
+# self_heal_cli_deps - a one-time-per-failure attempt to install cli/'s
+# npm dependencies just-in-time, for an npm-installed copy whose
+# postinstall script didn't run. Modern npm (11.x+) added an
+# allow-scripts approval gate that can silently skip postinstall by
+# default even with ignore-scripts=false - confirmed live, not assumed -
+# so `npm install -g devforgekit` alone cannot be relied on to always
+# populate cli/node_modules. This mirrors ensure_cli_dependencies() in
+# scripts/common.sh, quiet on success, and writes a marker on failure so
+# a real, ongoing problem (no network, no npm) doesn't retry - and
+# therefore add multi-second latency - on every single command.
+self_heal_cli_deps() {
+    command -v node >/dev/null 2>&1 || return 1
+    [[ -d "$SCRIPT_DIR/cli/node_modules" ]] && return 0
+    [[ -f "$SCRIPT_DIR/cli/package.json" ]] || return 1
+    command -v npm >/dev/null 2>&1 || return 1
+    local marker="$SCRIPT_DIR/cli/.npm-install-failed"
+    [[ -f "$marker" ]] && return 1
+
+    echo "Setting up the DevForgeKit CLI (first run only)..." >&2
+    if (cd "$SCRIPT_DIR/cli" && npm install --omit=dev --no-audit --no-fund >/dev/null 2>&1); then
+        rm -f "$marker"
+        return 0
+    fi
+    touch "$marker" 2>/dev/null || true
+    echo "Automatic setup failed - run: cd \"$SCRIPT_DIR/cli\" && npm install" >&2
+    return 1
+}
+
 # No arguments: hand off to the Node CLI with *no* command - it opens
 # the interactive dashboard (v1.2.3, docs/TUI.md) on a capable TTY and
 # falls back to --help output otherwise (bin/devforgekit.js decides).
 # Without the Node CLI, the original usage text keeps working unchanged.
 if [[ $# -eq 0 ]]; then
-    if cli_available; then
+    if cli_available || self_heal_cli_deps; then
         exec node "$SCRIPT_DIR/cli/bin/devforgekit.js"
     fi
     usage
@@ -114,7 +142,7 @@ case "$cmd" in
     install|bootstrap) exec "$SCRIPT_DIR/bootstrap.sh" "$@" ;;
 esac
 
-if cli_available; then
+if cli_available || self_heal_cli_deps; then
     exec node "$SCRIPT_DIR/cli/bin/devforgekit.js" "$cmd" "$@"
 fi
 
