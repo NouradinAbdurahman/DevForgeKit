@@ -26,6 +26,25 @@ At a glance, before tagging any release:
    before tagging if anything material changed since they were written.
 5. Working tree is clean and you're on `main` (`scripts/release.sh`
    aborts otherwise, or asks for confirmation off `main`).
+6. `devforgekit doctor --release-check` passes - one command that
+   verifies version consistency (`VERSION`/`package.json`/
+   `cli/package.json`/`Formula/devforgekit.rb`), required documentation
+   exists, distribution artifacts are present, the registry passes
+   audit/lint/format, no outstanding pending-work markers or
+   experimental/debug flags are present, the git tree is clean, and the
+   current commit's CI runs haven't failed. Blocks (non-zero exit) if
+   anything fails - see `cli/src/core/releaseCheck.js`.
+7. `devforgekit rc-validate` (or `./scripts/rc-validate.sh`) passes -
+   the full Distribution Verification & RC Validation gate: GitHub
+   Release, npm (`npm pack`/`publish --dry-run`/a real scratch-prefix
+   global install/uninstall), Homebrew (`brew style`/`audit`/a real
+   `brew install --build-from-source` against a local test tap/
+   `upgrade`/`uninstall`), a fresh-install lifecycle (`bootstrap.sh
+   --dry-run`, environment regeneration, snapshot/restore, repair scan),
+   smoke tests, package integrity, and the full regression suite -
+   writing a real, non-fabricated `docs/RCValidationReport.md` with a
+   PASS/FAIL recommendation. This is the final gate before tagging an
+   RC; run it locally before every `rc`/`promote` release.
 
 ## Tag process
 
@@ -122,6 +141,24 @@ Automated, on every relevant change (not just at release time):
   `brew test`, and the same functional verification as npm's workflow.
 - `.github/workflows/e2e.yml` - full install/validate/doctor/env/repair/
   workspace/uninstall lifecycle on macOS, Ubuntu, and Windows runners.
+
+On demand, before tagging any RC (once per candidate, or after fixing
+anything the above found):
+
+- `devforgekit rc-validate` (`scripts/rc-validate.sh`) - runs the full
+  Distribution Verification & RC Validation checklist locally in one
+  command and writes `docs/RCValidationReport.md`: GitHub Release
+  (existence, a real downloaded/checksummed asset), npm (dry runs plus a
+  real scratch-prefix global install/smoke-test/uninstall cycle),
+  Homebrew (`style`/`audit`/a real `install --build-from-source` against
+  a local test tap/`upgrade`/`uninstall`), a fresh-install lifecycle
+  against a scratch `$HOME` (`bootstrap.sh --dry-run`, environment
+  regeneration, snapshot/restore, repair scan), smoke tests against the
+  current checkout, `devforgekit doctor --release-check`, and the full
+  regression suite (`validate.sh` + `npm test --prefix cli`). Supports
+  `--skip-npm`/`--skip-homebrew`/`--skip-github-release`/`--skip-scaffold`
+  for a faster partial run while iterating. Exits non-zero (and the
+  report says `FAIL`) if anything required failed.
 
 Manual, once per release candidate (see
 `docs/ReleaseCandidateChecklist.md`'s "Create RC1" item):

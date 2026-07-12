@@ -4,7 +4,7 @@ _devforgekit_completions() {
     _init_completion || return
 
     if [[ ${cword} -eq 1 ]]; then
-        COMPREPLY=($(compgen -W "check dashboard ui doctor install bootstrap self-update upgrade update validate new create collection component info registry search stats snapshot snap workspace compatibility repair fix heal ai theme plugin graph deps benchmark bench perf package packages pkg config profile recipe backup clean cleanup inventory preferences prefs release report restore services env explain hello uninstall" -- "$cur"))
+        COMPREPLY=($(compgen -W "check dashboard ui doctor install bootstrap self-update upgrade update validate new create collection component info registry search stats snapshot snap workspace compatibility repair fix heal ai theme plugin graph deps benchmark bench perf package packages pkg config profile recipe backup clean cleanup inventory preferences prefs release report restore services env explain hello rc-validate uninstall" -- "$cur"))
         return 0
     fi
 

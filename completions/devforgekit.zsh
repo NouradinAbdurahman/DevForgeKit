@@ -42,6 +42,7 @@ _devforgekit() {
         'env:Environment Configuration Engine - PATH/variables/shell hooks generated from package metadata, never hand-edited'
         'explain:Why a component is installed, what depends on it, and whether it'\''s safe to remove'
         'hello:Print a greeting from the hello-world example plugin'
+        'rc-validate:Distribution Verification & RC Validation - GitHub Release/npm/Homebrew/install/smoke tests + docs/RCValidationReport.md (see RELEASE.md)'
         'uninstall:Remove what DevForgeKit installed - packages, VS Code/Cursor extensions, configuration, services (see '\''uninstall --help'\'')'
         return
     fi

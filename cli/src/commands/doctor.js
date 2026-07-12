@@ -10,6 +10,7 @@ import { scoreResults } from "../core/health.js";
 import { scanCompatibility } from "../core/compatibility/engine.js";
 import { logger } from "../core/logger.js";
 import { withErrorHandling, usageError } from "../core/errors.js";
+import { runReleaseCheck } from "../core/releaseCheck.js";
 
 // exportDoctorMarkdown(...) -> a Markdown report of the native component
 // diagnostics + compatibility scan (the bash-side scripts/doctor.sh text
@@ -89,6 +90,36 @@ async function runComponentDiagnostics(fix) {
     return { results, installedNames };
 }
 
+// RELEASE_CHECK_ICONS - the same PASS/WARNING/FAIL vocabulary the rest
+// of doctor uses, plus "skip" for a check that genuinely couldn't run
+// in this environment (no gh auth, not on a tag) rather than failing.
+const RELEASE_CHECK_ICONS = { pass: "✓", warn: "⚠", fail: "✗", skip: "-" };
+
+// runDoctorReleaseCheck() -> prints every check from runReleaseCheck()
+// and sets process.exitCode - the "is this checkout actually ready to
+// ship" gate `devforgekit doctor --release-check` exists for. Blocks
+// (non-zero exit) on any "fail"; "warn"/"skip" are surfaced but don't
+// block on their own, matching runReleaseCheck's own `ok` semantics.
+async function runDoctorReleaseCheck({ json }) {
+    const { checks, ok } = await runReleaseCheck();
+
+    if (json) {
+        console.log(JSON.stringify({ checks, ok }, null, 2));
+    } else {
+        logger.section("Release readiness check");
+        for (const c of checks) {
+            const icon = RELEASE_CHECK_ICONS[c.status] || "?";
+            const line = `${icon} ${c.name}: ${c.message}`;
+            if (c.status === "fail") logger.error(line);
+            else if (c.status === "warn") logger.warn(line);
+            else logger.info(line);
+        }
+        logger.info(ok ? "Release check: PASS - this checkout is release-ready." : "Release check: FAIL - resolve the failing check(s) above before releasing.");
+    }
+
+    process.exitCode = ok ? 0 : 1;
+}
+
 export function registerDoctorCommand(program) {
     program
         .command("doctor [args...]")
@@ -99,12 +130,18 @@ export function registerDoctorCommand(program) {
         .option("--skip-compatibility", "skip the compatibility scan over installed components")
         .option("--export <format>", "export the native diagnostics report as markdown instead of printing (implies --skip-bash)")
         .option("-o, --output <file>", "write the export to a file (default: stdout)")
+        .option("--release-check", "verify release readiness (version consistency, docs, distribution artifacts, registry health, git tree, CI status) and block with a non-zero exit if anything fails")
         .action(withErrorHandling(async function (args) {
             const opts = this.opts();
             const fix = args.includes("--fix");
 
             if (opts.export && opts.export !== "markdown") {
                 throw usageError(`Unknown export format '${opts.export}'. Available: markdown`);
+            }
+
+            if (opts.releaseCheck) {
+                await runDoctorReleaseCheck({ json: opts.json });
+                return;
             }
 
             let bashCode = 0;

@@ -25,6 +25,7 @@ import { registerReportCommand } from "./commands/report.js";
 import { registerServicesCommand } from "./commands/services.js";
 import { registerCleanCommand } from "./commands/clean.js";
 import { registerReleaseCommand } from "./commands/release.js";
+import { registerRcValidateCommand } from "./commands/rc-validate.js";
 import { registerPreferencesCommand } from "./commands/preferences.js";
 import { registerProfileCommand } from "./commands/profile.js";
 import { registerRecipeCommand } from "./commands/recipe.js";
@@ -160,6 +161,7 @@ Examples:
     registerServicesCommand(program);
     registerCleanCommand(program);
     registerReleaseCommand(program);
+    registerRcValidateCommand(program);
     registerPreferencesCommand(program);
     registerProfileCommand(program);
     registerRecipeCommand(program);

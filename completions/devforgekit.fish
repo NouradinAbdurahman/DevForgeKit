@@ -242,4 +242,5 @@ complete -c devforgekit -n "__fish_seen_subcommand_from env" -a "snapshot" -d 'E
 complete -c devforgekit -n "__fish_seen_subcommand_from env" -a "restore" -d 'Restore a snapshot\'s tracked state and regenerate from it (a safety snapshot of the current state is taken first)'
 complete -c devforgekit -n "__fish_use_subcommand" -a "explain" -d 'Why a component is installed, what depends on it, and whether it\'s safe to remove'
 complete -c devforgekit -n "__fish_use_subcommand" -a "hello" -d 'Print a greeting from the hello-world example plugin'
+complete -c devforgekit -n "__fish_use_subcommand" -a "rc-validate" -d 'Distribution Verification & RC Validation - GitHub Release/npm/Homebrew/install/smoke tests + docs/RCValidationReport.md (see RELEASE.md)'
 complete -c devforgekit -n "__fish_use_subcommand" -a "uninstall" -d 'Remove what DevForgeKit installed - packages, VS Code/Cursor extensions, configuration, services (see \'uninstall --help\')'

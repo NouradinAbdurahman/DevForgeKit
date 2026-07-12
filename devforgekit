@@ -64,6 +64,7 @@ Commands:
   preferences <action>   backup|restore|status for macOS UI preferences
   profile <action>       list|show|use - manage install profiles
   uninstall [flags]      Remove what DevForgeKit installed (--all/--packages/--config/--vscode/--cursor/--services; see uninstall --help)
+  rc-validate [flags]    Distribution Verification & RC Validation - the final gate before a release (see RELEASE.md)
   help                   Show this message
 
 The following commands require the Node CLI (installed by bootstrap.sh -
@@ -165,6 +166,7 @@ case "$cmd" in
     preferences|prefs) exec "$SCRIPT_DIR/scripts/preferences.sh" "$@" ;;
     profile) exec "$SCRIPT_DIR/scripts/profile.sh" "$@" ;;
     uninstall) exec "$SCRIPT_DIR/scripts/uninstall.sh" "$@" ;;
+    rc-validate) exec "$SCRIPT_DIR/scripts/rc-validate.sh" "$@" ;;
     -h|--help|help) usage ;;
     config|component|plugin|recipe|new|dashboard|ui)
         echo "'$SELF $cmd' requires the Node CLI, which isn't set up yet on this machine." >&2
