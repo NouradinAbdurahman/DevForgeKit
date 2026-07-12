@@ -10,29 +10,78 @@ name: DevForgeKit Core CLI
 # test + the sub-minute registry consistency checks) for quick feedback
 # on every commit; the full suite (npm test, several minutes) only runs
 # once, on pull_request.
-
+#
+# Deliberately NO `paths:` filter on the triggers below (unlike the
+# pre-RC1 version of this file). `test` is a required status check in
+# main's branch-protection ruleset - a workflow-level path filter means
+# the whole workflow silently never queues for a PR that doesn't touch
+# a matched path, so the check doesn't fail, it's simply *absent*,
+# which permanently blocks merging (confirmed live: this exact
+# deadlock blocked PR #23, a release.yml-only change, with
+# mergeStateStatus: BLOCKED and no bypass actors configured). Path
+# gating now happens one level down, in the `changes` job below plus
+# each heavy job's own `if:` - a job that's skipped via its own `if:`
+# still reports a real, completed "skipped" conclusion under its job
+# name, which *does* satisfy a required status check; a workflow that
+# never triggers reports nothing at all. See docs/GitHubActions.md.
 on:
   push:
-    paths:
-      - "cli/**"
-      - "registry/**"
-      - "plugins/**"
-      - ".github/workflows/cli.yml"
+    branches: [main]
   pull_request:
-    paths:
-      - "cli/**"
-      - "registry/**"
-      - "plugins/**"
-      - ".github/workflows/cli.yml"
 
 permissions:
   contents: read
 
 jobs:
+  # Fast, cheap path-detection - the one job every trigger of this
+  # workflow always runs, so `quick`/`test` below can gate their own
+  # expensive work without the workflow itself ever going missing.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      relevant: ${{ steps.filter.outputs.relevant }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Need real history to diff against an arbitrary base SHA -
+          # the default shallow (depth 1) clone only has the tip commit.
+          fetch-depth: 0
+
+      - name: Detect changes under cli/, registry/, plugins/, or this workflow file
+        id: filter
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            base="${{ github.event.pull_request.base.sha }}"
+          else
+            base="${{ github.event.before }}"
+          fi
+
+          # No usable base (first-ever push to a branch, or GitHub's
+          # documented all-zeros sentinel for a brand-new ref) - treat
+          # as relevant rather than silently skipping real work with
+          # nothing to diff against.
+          if [[ -z "$base" || "$base" =~ ^0+$ ]] || ! git cat-file -e "$base" 2>/dev/null; then
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+            echo "No usable base commit to diff against - treating as relevant."
+            exit 0
+          fi
+
+          changed="$(git diff --name-only "$base" "${{ github.sha }}")"
+          echo "Changed files:"
+          echo "$changed"
+
+          if echo "$changed" | grep -qE '^(cli/|registry/|plugins/|\.github/workflows/cli\.yml)'; then
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "relevant=false" >> "$GITHUB_OUTPUT"
+          fi
+
   # Fast feedback on every push: lint + registry consistency checks,
   # all sub-minute, none of them the timing-sensitive full test suite.
+  # Not a required status check itself - free to stay push-only.
   quick:
-    if: github.event_name == 'push'
+    needs: changes
+    if: github.event_name == 'push' && needs.changes.outputs.relevant == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -78,8 +127,14 @@ jobs:
 
   # Full validation, once, on the PR itself: everything quick has plus
   # the complete test suite (unit tests, TUI rendering tests, etc.).
+  # This IS a required status check - it must always exist for every
+  # PR (even one with nothing relevant to test), so it's gated by its
+  # own `if:` rather than a workflow-level path filter. A PR with no
+  # relevant changes reports a real, fast "skipped" conclusion instead
+  # of running the ~6min suite for nothing.
   test:
-    if: github.event_name == 'pull_request'
+    needs: changes
+    if: github.event_name == 'pull_request' && needs.changes.outputs.relevant == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
