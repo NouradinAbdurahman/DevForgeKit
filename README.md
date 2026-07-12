@@ -14,13 +14,13 @@ The complete local-first development environment platform for building, managing
 
 <div align="center">
 
-**Version 3.0.0** &middot; **MIT License** &middot; **macOS / Linux / Windows** &middot; **Node.js ESM**
+**Version 3.0.1-rc1** &middot; **MIT License** &middot; **macOS / Linux / Windows** &middot; **Node.js ESM**
 
 | | | | |
 | :---: | :---: | :---: | :---: |
 | **261** Registry Packages | **17** Project Generators | **20** TUI Themes | **8** Plugin Templates |
 | **50** Environment Profiles | **17** Collections | **8** Recipes | **196** Compatibility Rules |
-| **29** TUI Pages | **1,299** Tests | **7** AI Providers | **12** Benchmark Categories |
+| **29** TUI Pages | **1,350** Tests | **7** AI Providers | **12** Benchmark Categories |
 
 </div>
 
@@ -61,6 +61,25 @@ The complete local-first development environment platform for building, managing
 
 ## Installation
 
+**npm** (recommended):
+
+```bash
+npm install -g devforgekit@next
+devforgekit install
+```
+
+`@next` currently points at the same `v3.0.1-rc1` release candidate npm's `latest` tag also resolves to right now (npm always assigns `latest` to a package's very first publish - `latest` and `@next` diverge automatically the moment a real `v3.0.1` stable ships, no README change needed).
+
+**Homebrew:**
+
+```bash
+brew tap NouradinAbdurahman/devforgekit
+brew install devforgekit
+devforgekit install
+```
+
+**From source** (for contributing, or to run without installing a package):
+
 ```bash
 git clone https://github.com/NouradinAbdurahman/DevForgeKit.git
 cd DevForgeKit
@@ -68,9 +87,9 @@ chmod +x bootstrap.sh devforgekit
 ./devforgekit install
 ```
 
-**Requirements:** macOS (Apple Silicon or Intel), Linux (Ubuntu/Debian, Fedora/RHEL, Arch), or Windows (with WSL recommended). Node.js 18+ for the CLI. Internet connection.
+**Requirements:** macOS (Apple Silicon or Intel) or Linux (Ubuntu/Debian, Fedora/RHEL, Arch) for the npm/Homebrew packages; Node.js 18+; internet connection. Windows: use WSL, or the source install directly.
 
-On a first-ever install in a real terminal (no `--profile` flag, no `-y`), you get an interactive wizard — Minimal / Recommended / Full / Custom, then opt-in prompts for VS Code/Cursor extensions and starting local services, then a preview before anything installs. Any flag, `-y`, or non-interactive/CI usage skips the wizard and installs exactly what you specify, unchanged. See [docs/Profiles.md](docs/Profiles.md).
+`devforgekit install` is a separate, explicit step from installing the `devforgekit` command itself (whichever channel you used) - it provisions your actual workstation: Homebrew, mise, dotfiles, editors, services. On a first-ever run in a real terminal (no `--profile` flag, no `-y`), you get an interactive wizard — Minimal / Recommended / Full / Custom, then opt-in prompts for VS Code/Cursor extensions and starting local services, then a preview before anything installs. Any flag, `-y`, or non-interactive/CI usage skips the wizard and installs exactly what you specify, unchanged. See [docs/Profiles.md](docs/Profiles.md).
 
 **Flags:** `--profile <name>` (flutter, backend, recommended, minimal, full), `--dry-run`, `--skip-services`, `-y/--yes`
 
@@ -131,26 +150,28 @@ devforgekit completion doctor
 
 ```bash
 # Provision everything
-./devforgekit install
+devforgekit install
 
 # Open the interactive dashboard
-./devforgekit
+devforgekit
 
 # Generate a project
-./devforgekit new nextjs my-app
+devforgekit new nextjs my-app
 
 # Ask the AI assistant
-./devforgekit ai doctor "flutter doctor shows errors"
+devforgekit ai doctor "flutter doctor shows errors"
 
 # Run deep diagnostics
-./devforgekit doctor
+devforgekit doctor
 
 # Install a curated environment
-./devforgekit recipe install ai-engineer
+devforgekit recipe install ai-engineer
 
 # Create a plugin
-./devforgekit plugin create my-plugin --template simple-command
+devforgekit plugin create my-plugin --template simple-command
 ```
+
+Running from source instead of npm/Homebrew? Use `./devforgekit` (repo-relative) in place of `devforgekit` throughout - both are the same dispatcher.
 
 ---
 
@@ -173,6 +194,7 @@ devforgekit completion doctor
 | **Repair** | `repair` (`fix`/`heal`), `repair install` (fix the CLI's own symlink/deps/failed packages), `repair scan/plan/explain/explain-issues/verify/rollback/rollback-repair/rollback-list/history/export/delete/clean/benchmark` |
 | **Snapshot** | `snapshot create/restore/list/inspect/verify/diff/export/delete/explain` |
 | **Config** | `config`, `config list/set/get`, `theme list/use/preview/random/export/import/gallery` |
+| **Completions** | `completion install/uninstall/status/doctor` (zsh/bash/fish, for npm installs) |
 | **TUI** | `devforgekit` (no args), `dashboard [--page <id>]` |
 
 Full reference with all flags: [docs/CommandReference.md](docs/CommandReference.md)
@@ -310,7 +332,7 @@ DevForgeKit/
 │   ├── src/generators/        # 17 project generators
 │   ├── src/tui/               # Interactive dashboard (Ink/React)
 │   ├── src/schemas/           # JSON schemas (AJV)
-│   └── test/                  # 1,299 tests
+│   └── test/                  # 1,350 tests
 ├── registry/                  # Component registry (Layer 4)
 │   ├── packages/              # 261 YAML manifests
 │   ├── collections/           # 17 curated collections
@@ -361,7 +383,7 @@ DevForgeKit/
 | Repair Scanners | 12 |
 | DEV Graph Node Types | 21 |
 | DEV Graph Edge Types | 16 |
-| Tests | 1,299 |
+| Tests | 1,350 |
 | Documentation Files | 44 |
 
 </div>
@@ -437,7 +459,7 @@ cd DevForgeKit
 cd cli && npm install
 
 # Run tests
-npm test                    # 1,299 tests
+npm test                    # 1,350 tests
 
 # Run lint
 npm run lint                # eslint
@@ -457,9 +479,9 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for coding standards, testing conventions
 
 | Problem | Solution |
 | :--- | :--- |
-| Bootstrap step failed | Re-run `./devforgekit install` (idempotent) |
-| Tool not on PATH | `./devforgekit doctor --fix` |
-| Services won't start | `./devforgekit services status` |
+| Bootstrap step failed | Re-run `devforgekit install` (idempotent) |
+| Tool not on PATH | `devforgekit doctor --fix` |
+| Services won't start | `devforgekit services status` |
 | AI not configured | `export OPENAI_API_KEY=...` then `devforgekit config set aiProvider openai` |
 | Plugin won't install | `devforgekit plugin doctor` |
 | Dashboard won't open | Ensure TTY, or `DEVFORGEKIT_NO_TUI=1` |
@@ -481,7 +503,7 @@ Yes. The CLI (Layer 2) supports Linux (apt/dnf/pacman) and Windows (winget/choco
 Not silently. `fs_safe_copy` backs up the existing file as `<file>.backup-<timestamp>` before overwriting.
 
 **Is there a lighter install?**
-`./devforgekit install --profile minimal` installs bare-essentials CLI tooling, `--profile recommended` adds everyday tooling without Flutter/Android/databases. Or `--profile flutter`/`backend` for stack-specific subsets. Run `./devforgekit install` with no flags in an interactive terminal for a wizard that walks through these choices.
+`devforgekit install --profile minimal` installs bare-essentials CLI tooling, `--profile recommended` adds everyday tooling without Flutter/Android/databases. Or `--profile flutter`/`backend` for stack-specific subsets. Run `devforgekit install` with no flags in an interactive terminal for a wizard that walks through these choices.
 
 **Can I use the CLI without the TUI?**
 Yes. Any argument skips the TUI: `devforgekit doctor`. Or set `DEVFORGEKIT_NO_TUI=1`.
@@ -505,7 +527,7 @@ Issues and PRs are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for developme
 ./scripts/validate.sh              # shell, JSON, YAML, Markdown validation
 ./bootstrap.sh --dry-run --yes     # preflight without side effects
 cd cli && npm run lint             # eslint
-cd cli && npm test                 # 1,299 tests
+cd cli && npm test                 # 1,350 tests
 ```
 
 ---
