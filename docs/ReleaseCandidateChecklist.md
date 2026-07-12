@@ -22,10 +22,11 @@ each remaining item closes.
 | Backward Compatibility Matrix | ✓ | 228/228 `--help` invocations clean, 69/69 missing-argument error paths clean, full `--json` validity sweep across every read-only command. Found and fixed 3 real bugs along the way (a 4th/5th/6th instance of the unbounded-sequential-validate class, plus a `--json`-ignored-on-empty-result bug in two commands), each with a regression test. See `docs/CompatibilityReport.md`. |
 | API Freeze | ✓ | Every public command, config file, registry schema, JSON output, env var, plugin API, workspace format, snapshot format, and component schema classified Stable/Experimental/Internal. `ai *` and per-command JSON payload shape deliberately left Experimental. See `docs/ApiFreeze.md`. |
 | Real hardware/VM validation | Not started | macOS Intel, Apple Silicon, Ubuntu, Fedora, Arch, Windows 11, fresh VMs — outside this sandbox's reach; needs the user's own hardware or a VM farm. |
-| v3.0.0-rc1 tag | Not started | Blocked on the four items above. `v3.0.0` (final) is already tagged from an earlier, less-complete snapshot 20 commits behind current work — the next tag must be `v3.0.0-rc1`, not a reused `3.0.0`. |
-| Website | Pending | Not started. |
-| Homebrew Formula | Pending | Not started. |
-| npm Package | Pending | Not started (the CLI already has a `cli/package.json` — publishing to the npm registry as an installable package is separate work). |
+| v3.0.0-rc1 tag | Not started | Blocked only on real hardware/VM validation above. `v3.0.0` (final) is already tagged from an earlier, less-complete snapshot behind current work — the next tag must be `v3.0.0-rc1`, not a reused `3.0.0`. |
+| Website | ✓ | `dev_forge_kit_web` updated to match current version/changelog/roadmap. |
+| Homebrew Formula | ✓ | `Formula/devforgekit.rb` — checksummed, installs the launcher + shell completions, `brew style`/`brew audit` clean, real `brew install --build-from-source`/`brew test` verified live and in CI (`.github/workflows/homebrew-formula.yml`). Publishing to a real `homebrew-devforgekit` tap deliberately deferred until after RC1 dogfooding (see Publishing order in `RELEASE.md`). |
+| npm Package | ✓ | Root `package.json` — `npm pack`/`npm publish --dry-run` clean, a real scratch-prefix global install verified live and in CI (`.github/workflows/npm-package.yml`), self-healing `cli/node_modules` install for npm 11's `allow-scripts` gate. Publishing to the real npm registry deliberately deferred until after RC1 dogfooding, same reasoning as Homebrew. |
+| Distribution Verification | ✓ | `devforgekit doctor --release-check` (version consistency, docs, artifacts, registry, git tree, CI status - single automated PASS/FAIL gate) and `devforgekit rc-validate` (`scripts/rc-validate.sh` - GitHub Release/npm/Homebrew/install lifecycle/smoke tests/regression suite, writes `docs/RCValidationReport.md`). See `RELEASE.md`. |
 | Winget | Pending | Not started. |
 | Chocolatey | Pending | Not started. |
 | Scoop | Pending | Not started. |
