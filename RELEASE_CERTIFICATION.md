@@ -355,3 +355,23 @@ this bug could matter either way: `npm whoami` returned `401
 Unauthorized` - an expired local npm login session, not a package or
 registry defect. Re-authentication needed before retrying the real
 publish.
+
+**2026-07-13** - Phase 5 completed. After PR #42 merged, the repository
+owner re-authenticated (`npm login`, then a real `npm publish`
+completing npm's browser-based publish approval flow) and published
+`devforgekit@3.0.1` for real. Verified: `npm view devforgekit version`
+-> `3.0.1`; `npm view devforgekit versions` -> `["3.0.1-rc1", "3.0.1"]`;
+`npm dist-tag ls devforgekit` -> `latest: 3.0.1, next: 3.0.1-rc1` - a
+plain `npm publish` (no `--tag`) correctly moved `latest` to the new
+stable version by default, while `next` stayed pointed at the RC,
+exactly the intended behavior for the first stable release (no manual
+dist-tag changes were needed or made). `npm view devforgekit@3.0.1 bin`
+confirms the corrected bin field (`"devforgekit": "devforgekit"`) is
+live on the published version. Full end-to-end verification: a real
+`npm install -g devforgekit --prefix <scratch>` into an isolated scratch
+prefix, confirming the postinstall-skip self-heal fires as documented
+(`Setting up the DevForgeKit CLI (first run only)...`), then
+`devforgekit --version` (`3.0.1`), `--help`, and `check` (a real
+component-health scan) all working against the installed copy - torn
+down afterward (`npm uninstall -g` + prefix removal), leaving no trace
+on this machine.
