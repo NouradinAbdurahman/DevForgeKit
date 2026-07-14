@@ -307,7 +307,7 @@ See `docs/EnvironmentEngine.md`. Tracks every tool DevForgeKit installs (observe
 | Command | Description | Flags |
 | --- | --- | --- |
 | `repair` (`fix`, `heal`) | Full pipeline: scan → plan → repair → verify | `-y/--yes`, `--dry-run` |
-| `repair scan` | Run 12 scanners | `--json`, `--category <cat>` |
+| `repair scan` | Run 13 scanners | `--json`, `--category <cat>` |
 | `repair plan` | Generate ordered repair plan | `--dry-run`, `--json` |
 | `repair explain` | AI-powered root cause analysis | `--provider <id>`, `--model <name>` |
 | `repair explain-issues` | Explain issues in human-readable format | `--plan`, `--json` |

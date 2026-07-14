@@ -8,6 +8,11 @@ The complete local-first development environment platform for building, managing
 
 [Website](https://devforgekit.dev) &middot; [Documentation](#documentation) &middot; [Quick Start](#quick-start) &middot; [Contributing](CONTRIBUTING.md)
 
+[![npm version](https://img.shields.io/npm/v/devforgekit.svg)](https://www.npmjs.com/package/devforgekit)
+[![CI](https://github.com/NouradinAbdurahman/DevForgeKit/actions/workflows/cli.yml/badge.svg)](https://github.com/NouradinAbdurahman/DevForgeKit/actions/workflows/cli.yml)
+[![CodeQL](https://github.com/NouradinAbdurahman/DevForgeKit/actions/workflows/codeql.yml/badge.svg)](https://github.com/NouradinAbdurahman/DevForgeKit/actions/workflows/codeql.yml)
+[![License: MIT](https://img.shields.io/github/license/NouradinAbdurahman/DevForgeKit.svg)](LICENSE)
+
 </div>
 
 ---
@@ -20,7 +25,7 @@ The complete local-first development environment platform for building, managing
 | :---: | :---: | :---: | :---: |
 | **261** Registry Packages | **17** Project Generators | **20** TUI Themes | **8** Plugin Templates |
 | **50** Environment Profiles | **17** Collections | **8** Recipes | **196** Compatibility Rules |
-| **29** TUI Pages | **1,350** Tests | **7** AI Providers | **12** Benchmark Categories |
+| **28** TUI Pages | **1,350** Tests | **7** AI Providers | **12** Benchmark Categories |
 
 </div>
 
@@ -42,11 +47,11 @@ The complete local-first development environment platform for building, managing
 
 | Feature | Description |
 | :--- | :--- |
-| **Interactive Dashboard** | Full-screen keyboard-driven TUI with 29 pages, 20 themes, and global search |
+| **Interactive Dashboard** | Full-screen keyboard-driven TUI with 28 pages, 20 themes, and global search |
 | **AI Assistant** | 7 providers (OpenAI, Anthropic, Gemini, Groq, OpenRouter, Ollama, LM Studio) with context engine |
 | **Project Generator** | Scaffold production-ready projects for 17 stacks with tests, CI, and Docker |
-| **Environment Graph** | Visual dependency graph with 21 node types, 16 edge types, and 7 export formats |
-| **Repair Engine** | 12 scanners with dependency-aware repair ordering and automatic rollback |
+| **Environment Graph** | Visual dependency graph with 22 node types, 18 edge types, and 7 export formats |
+| **Repair Engine** | 13 scanners with dependency-aware repair ordering and automatic rollback |
 | **Benchmark Engine** | 12 categories, 3 profiles, comparison, history, and AI-powered analysis |
 | **Workspace Manager** | Git/SSH/env/secrets/Docker/K8s/cloud context in one switchable unit |
 | **Plugin SDK** | Full lifecycle: create, test, build, package, publish, install with Ed25519 signing |
@@ -64,11 +69,11 @@ The complete local-first development environment platform for building, managing
 **npm** (recommended):
 
 ```bash
-npm install -g devforgekit@next
+npm install -g devforgekit
 devforgekit install
 ```
 
-`@next` currently points at the same `v3.0.1-rc1` release candidate npm's `latest` tag also resolves to right now (npm always assigns `latest` to a package's very first publish - `latest` and `@next` diverge automatically the moment a real `v3.0.1` stable ships, no README change needed).
+This installs the `latest` dist-tag, which is the real `v3.0.1` stable release. Don't use `@next` - it currently points at the superseded `v3.0.1-rc1` release candidate, not the stable release.
 
 **Homebrew:**
 
@@ -152,6 +157,9 @@ devforgekit completion doctor
 ## Quick Start
 
 ```bash
+# Verify the CLI is installed and on PATH
+devforgekit --version
+
 # Provision everything
 devforgekit install
 
@@ -221,7 +229,7 @@ graph TB
     subgraph L2["Layer 2: Core CLI (Node.js ESM)"]
         CMD["commands/"]
         CORE["core/ services"]
-        TUI["tui/ dashboard (29 pages)"]
+        TUI["tui/ dashboard (28 pages)"]
         GEN["generators/ (17 stacks)"]
     end
     subgraph L1["Layer 1: Bootstrap (bash 3.2)"]
@@ -280,6 +288,8 @@ Full architecture diagrams: [docs/ArchitectureDiagrams.md](docs/ArchitectureDiag
 | Document | Description |
 | :--- | :--- |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Dev setup, coding standards, testing, PR process |
+| [SECURITY.md](SECURITY.md) | Threat model, trust boundaries, vulnerability disclosure |
+| [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | Community standards (Contributor Covenant v2.0) |
 | [CommandReference.md](docs/CommandReference.md) | Every command in one table |
 | [KeyboardShortcuts.md](docs/KeyboardShortcuts.md) | TUI keyboard shortcut reference |
 | [MigrationGuide.md](docs/MigrationGuide.md) | Version migration guide |
@@ -298,9 +308,9 @@ Full architecture diagrams: [docs/ArchitectureDiagrams.md](docs/ArchitectureDiag
 | [ContextEngine.md](docs/ContextEngine.md) | Context aggregation design |
 | [PromptLibrary.md](docs/PromptLibrary.md) | 10-domain prompt library |
 | [MemorySystem.md](docs/MemorySystem.md) | Local event log design |
-| [EnvironmentGraph.md](docs/EnvironmentGraph.md) | DEV Graph: 21 node types, 16 edge types |
+| [EnvironmentGraph.md](docs/EnvironmentGraph.md) | DEV Graph: 22 node types, 18 edge types |
 | [BenchmarkGuide.md](docs/BenchmarkGuide.md) | 12 categories, 3 profiles, comparison |
-| [RepairGuide.md](docs/RepairGuide.md) | 12 scanners, repair plans, rollback |
+| [RepairGuide.md](docs/RepairGuide.md) | 13 scanners, repair plans, rollback |
 | [WorkspaceManager.md](docs/WorkspaceManager.md) | Git/SSH/env/secrets/Docker/K8s/cloud |
 | [CompatibilityEngine.md](docs/CompatibilityEngine.md) | Version-range validation, 5-tier score |
 | [TUI.md](docs/TUI.md) | Full TUI reference |
@@ -358,7 +368,7 @@ DevForgeKit/
 │   ├── validate.sh            # Full validation
 │   └── release.sh             # Version bump, tag, push
 ├── templates/                 # 14 starter project templates
-├── docs/                      # Deep-dive documentation (44 files)
+├── docs/                      # Deep-dive documentation (55 files)
 └── .github/
     ├── workflows/             # CI: bootstrap, shellcheck, lint, cli, release, codeql
     └── dependabot.yml         # Dependency automation
@@ -378,16 +388,16 @@ DevForgeKit/
 | Collections | 17 |
 | Recipes | 8 |
 | Compatibility Rules | 196 |
-| TUI Pages | 29 |
+| TUI Pages | 28 |
 | TUI Themes | 20 |
 | Plugin Templates | 8 |
 | AI Providers | 7 |
 | Benchmark Categories | 12 |
-| Repair Scanners | 12 |
-| DEV Graph Node Types | 21 |
-| DEV Graph Edge Types | 16 |
+| Repair Scanners | 13 |
+| DEV Graph Node Types | 22 |
+| DEV Graph Edge Types | 18 |
 | Tests | 1,350 |
-| Documentation Files | 44 |
+| Documentation Files | 55 |
 
 </div>
 
@@ -556,6 +566,6 @@ cd cli && npm test                 # 1,350 tests
 
 <div align="center">
 
-[devforgekit.dev](https://devforgekit.dev) &middot; [GitHub](https://github.com/NouradinAbdurahman/DevForgeKit) &middot; [Issues](https://github.com/NouradinAbdurahman/DevForgeKit/issues) &middot; [CONTRIBUTING.md](CONTRIBUTING.md) &middot; [Documentation](#documentation)
+[devforgekit.dev](https://devforgekit.dev) &middot; [GitHub](https://github.com/NouradinAbdurahman/DevForgeKit) &middot; [Releases](https://github.com/NouradinAbdurahman/DevForgeKit/releases) &middot; [Issues](https://github.com/NouradinAbdurahman/DevForgeKit/issues) &middot; [Discussions](https://github.com/NouradinAbdurahman/DevForgeKit/discussions) &middot; [CONTRIBUTING.md](CONTRIBUTING.md) &middot; [Documentation](#documentation)
 
 </div>
