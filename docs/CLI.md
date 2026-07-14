@@ -421,7 +421,7 @@ diagnostic and repair platform: Scan → Analyze → Plan → Repair → Verify.
 
 ```bash
 ./devforgekit repair               # full pipeline: scan, plan, rollback snapshot, repair, verify
-./devforgekit repair scan          # 12 scanners across all subsystems
+./devforgekit repair scan          # 13 scanners across all subsystems
 ./devforgekit repair plan          # ordered repair plan with dependency-aware sorting
 ./devforgekit repair explain       # AI-powered root cause analysis
 ./devforgekit repair verify        # post-repair verification

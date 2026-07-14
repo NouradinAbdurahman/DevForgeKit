@@ -8,7 +8,7 @@ plan, and safely fix environment issues.
 DevForgeKit has two complementary repair pipelines:
 
 1. **Intelligent Repair Engine** (`devforgekit repair`) — a multi-stage
-   pipeline that scans 12+ subsystems, generates a dependency-ordered plan
+   pipeline that scans 13 subsystems, generates a dependency-ordered plan
    with risk assessment, executes repairs with safety checks and per-repair
    rollback, verifies results, and records a quality score.
 
@@ -25,7 +25,7 @@ scanIssues() → planRepairs() → [dryRunPlan()] → executeRepairs() → verif
 
 ### Scan
 
-12 scanners probe every DevForgeKit subsystem:
+13 scanners probe every DevForgeKit subsystem:
 
 - **Compatibility Engine** — cross-tool/version compatibility
 - **PATH** — missing/duplicate directories
@@ -39,6 +39,7 @@ scanIssues() → planRepairs() → [dryRunPlan()] → executeRepairs() → verif
 - **Homebrew** — `brew doctor` issues
 - **SSH** — missing keys
 - **Caches** — oversized cache directories
+- **CLI Install** — the CLI's own global symlink/deps/failed packages from the last `bootstrap.sh` run
 
 ### Plan
 
