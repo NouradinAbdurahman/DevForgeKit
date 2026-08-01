@@ -8,8 +8,8 @@
     "ios": "react-native run-ios"
   },
   "dependencies": {
-    "react": "19.2.7",
-    "react-native": "0.86.0"
+    "react": "19.2.8",
+    "react-native": "0.86.2"
   },
   "devDependencies": {
     "@react-native-community/cli": "^20.2.0"
