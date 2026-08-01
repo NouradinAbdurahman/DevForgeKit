@@ -37,11 +37,11 @@ jobs:
       # No autobuild step: none of the analyzed languages (GitHub Actions
       # YAML, JS/TS, Python) require a compile step before analysis.
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v4
+        uses: github/codeql-action/init@v4.37.3
         with:
           languages: ${{ matrix.language }}
 
       - name: Perform CodeQL analysis
-        uses: github/codeql-action/analyze@v4
+        uses: github/codeql-action/analyze@v4.37.3
         with:
           category: "/language:${{ matrix.language }}"
